@@ -85,7 +85,7 @@ func postJSON(t *testing.T, url, contentType, body string) (int, http.Header, ma
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode, resp.Header, decodeBody(t, resp)
 }
 
@@ -96,7 +96,7 @@ func getJSON(t *testing.T, url string) (int, http.Header, map[string]any) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode, resp.Header, decodeBody(t, resp)
 }
 

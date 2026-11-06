@@ -77,15 +77,6 @@ var hiddenLanguages = []language{
 	{plamo: "ja(easy)", iso: "ja(easy)", name: "Japanese (easy)"},
 }
 
-// plamoToISO maps model language codes to LibreTranslate-facing codes.
-var plamoToISO = func() map[string]string {
-	m := make(map[string]string)
-	for _, l := range append(append([]language{}, languages...), hiddenLanguages...) {
-		m[l.plamo] = l.iso
-	}
-	return m
-}()
-
 // toPlamo resolves a LibreTranslate-facing code (or a model-native code such
 // as "zh-hans") to the model language code. It returns "" when unknown.
 var toPlamo = func() func(string) string {

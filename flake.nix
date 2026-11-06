@@ -62,6 +62,7 @@
           packages = [
             (pythonEnvFor pkgs)
             pkgs.go
+            pkgs.golangci-lint
             pkgs.llama-cpp
           ];
         };

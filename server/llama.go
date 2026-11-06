@@ -37,7 +37,7 @@ func freePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -80,8 +80,8 @@ func startLlamaServer(cfg *config) (*llamaServer, error) {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		os.Remove(logFile.Name())
+		_ = logFile.Close()
+		_ = os.Remove(logFile.Name())
 		return nil, fmt.Errorf("failed to start llama-server: %w", err)
 	}
 
@@ -102,7 +102,7 @@ func startLlamaServer(cfg *config) (*llamaServer, error) {
 		resp, err := ls.client.Get(ls.baseURL + "/health")
 		if err == nil {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			var h struct {
 				Status string `json:"status"`
 			}
@@ -222,7 +222,7 @@ func (l *llamaServer) complete(ctx context.Context, text, sourcePlamo, targetPla
 	if err != nil {
 		return "", fmt.Errorf("llama-server request failed: %v\n%s", err, logTail(l.logPath, 10))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return "", err

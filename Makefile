@@ -1,4 +1,4 @@
-.PHONY: build build-image vet fmt test test-e2e release
+.PHONY: build build-image lint vet fmt test test-e2e release
 
 NIX ?= nix
 
@@ -9,6 +9,10 @@ build:
 ## build-image: build the native-architecture container image archive
 build-image:
 	$(NIX) build .#sumomo-image --print-out-paths --no-link
+
+## lint: golangci-lint the server sources
+lint:
+	$(NIX) develop -c sh -c 'cd server && golangci-lint run'
 
 ## vet: go vet the server sources
 vet:

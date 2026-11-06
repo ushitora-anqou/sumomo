@@ -318,19 +318,19 @@ func TestTranslateRequiresAPIKey(t *testing.T) {
 	ts := newTestServer(t, cfg, echoTranslate)
 
 	// Missing key.
-	status, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+	status, _, _ := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"en","target":"ja"}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 without a key", status)
 	}
 	// Wrong key.
-	status, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+	status, _, _ = postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"en","target":"ja","api_key":"wrong"}`)
 	if status != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 for a wrong key", status)
 	}
 	// Correct key.
-	status, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+	status, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"en","target":"ja","api_key":"secret"}`)
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, body = %v", status, body)
@@ -346,7 +346,7 @@ func TestLanguagesEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -371,7 +371,7 @@ func TestLanguagesRequestMethodNotAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405 for POST /languages", resp.StatusCode)
 	}
@@ -411,7 +411,7 @@ func TestRootIsNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 for GET / (no HTML UI)", resp.StatusCode)
 	}
@@ -427,7 +427,7 @@ func TestCORSPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("status = %d, want 204 for a preflight", resp.StatusCode)
 	}

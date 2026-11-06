@@ -87,6 +87,7 @@ $ make test-e2e
 
 ```console
 $ nix develop          # Go + Python + llama.cpp CLI
+$ make lint            # golangci-lint
 $ make vet             # gofmt チェック + go vet
 $ make fmt             # gofmt
 $ make test            # サーバーのユニットテスト
