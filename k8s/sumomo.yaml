@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sumomo
+  labels:
+    app: sumomo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sumomo
+  template:
+    metadata:
+      labels:
+        app: sumomo
+    spec:
+      containers:
+      - name: sumomo
+        image: sumomo:latest
+        imagePullPolicy: Never
+        args:
+        - --listen
+        - 0.0.0.0:5000
+        - --model
+        - /models/plamo-3-translate-0.8b-Q4_K_M.gguf
+        - --n-ctx
+        - "4096"
+        ports:
+        - name: http
+          containerPort: 5000
+        volumeMounts:
+        - name: models
+          mountPath: /models
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 768Mi
+          limits:
+            memory: 2Gi
+      volumes:
+      - name: models
+        hostPath:
+          path: /mnt/sumomo-models
+          type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sumomo
+spec:
+  selector:
+    app: sumomo
+  ports:
+  - name: http
+    port: 5000
+    targetPort: http

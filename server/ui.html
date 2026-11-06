@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sumomo — LibreTranslate 互換サーバー</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.25rem; }
+  textarea, select, button { font: inherit; }
+  textarea { width: 100%; height: 8em; box-sizing: border-box; padding: .5rem; }
+  .row { display: flex; gap: .5rem; margin: .6rem 0; align-items: center; flex-wrap: wrap; }
+  select { padding: .3rem; }
+  button { padding: .4rem 1.4rem; }
+  #result { border: 1px solid rgba(127,127,127,.5); padding: .6rem; white-space: pre-wrap; min-height: 3em; }
+  #status { color: gray; }
+  code { background: rgba(127,127,127,.2); padding: 0 .3em; border-radius: 3px; }
+  footer { color: gray; font-size: .85rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<h1>Sumomo <small>(PLaMo 3 Translate 0.8B on llama.cpp)</small></h1>
+<div class="row">
+  <select id="source" aria-label="翻訳元言語"></select>
+  <span aria-hidden="true">→</span>
+  <select id="target" aria-label="翻訳先言語"></select>
+  <button id="go">翻訳</button>
+</div>
+<textarea id="q" placeholder="翻訳するテキストを入力してください"></textarea>
+<div class="row"><span id="status"></span></div>
+<div id="result"></div>
+<footer>
+  API: <code>POST /translate</code> ・ <code>GET /languages</code> ・ <code>POST /detect</code> ・ <code>GET /frontend/settings</code> ・ <code>GET /health</code>
+</footer>
+<script>
+async function loadLanguages() {
+  const res = await fetch('/languages');
+  const langs = await res.json();
+  const src = document.getElementById('source');
+  const tgt = document.getElementById('target');
+  src.add(new Option('自動検出 (auto)', 'auto'));
+  for (const l of langs) {
+    src.add(new Option(l.name, l.code));
+    tgt.add(new Option(l.name, l.code));
+  }
+  tgt.value = 'en';
+}
+document.getElementById('go').addEventListener('click', async () => {
+  const q = document.getElementById('q').value;
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  if (!q) return;
+  status.textContent = '翻訳中…';
+  result.textContent = '';
+  try {
+    const res = await fetch('/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: q,
+        source: document.getElementById('source').value,
+        target: document.getElementById('target').value,
+        format: 'text',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = 'エラー: ' + (data.error || res.status);
+      return;
+    }
+    status.textContent = '';
+    result.textContent = Array.isArray(data.translatedText)
+      ? data.translatedText.join('\n')
+      : data.translatedText;
+  } catch (e) {
+    status.textContent = 'エラー: ' + e;
+  }
+});
+loadLanguages();
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mastodon-pg
+  namespace: mastodon
+  labels:
+    app: mastodon-pg
+spec:
+  serviceName: mastodon-pg
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mastodon-pg
+  template:
+    metadata:
+      labels:
+        app: mastodon-pg
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:17
+        env:
+        - name: POSTGRES_USER
+          value: mastodon
+        - name: POSTGRES_PASSWORD
+          value: mastodonpw
+        - name: POSTGRES_DB
+          value: mastodon
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - name: pg
+          containerPort: 5432
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "mastodon", "-d", "mastodon"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 768Mi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mastodon-pg
+  namespace: mastodon
+spec:
+  selector:
+    app: mastodon-pg
+  ports:
+  - name: pg
+    port: 5432
+    targetPort: pg
