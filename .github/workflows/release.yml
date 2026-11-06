@@ -1,3 +1,21 @@
+# Release workflow: publish a (multi-arch) image to GHCR.
+#
+# Flow:  meta (image name + final tags)  ->  build (matrix per platform,
+#         native runners, per-arch tag push)  ->  merge (imagetools create)
+#
+# Conventions (same mechanism as waq's _build-nix-app.yml):
+#   - image:   imageName/imageTag are evaluated from the flake package
+#              (ghcr.io/ushitora-anqou/sumomo:latest).
+#   - build:   `nix build .#sumomo-image` resolves to the runner's native
+#              system, so each platform builds natively on its own runner
+#              (arm64 on an arm64 runner; no cross-compilation, no VM,
+#              no emulation).
+#   - tags:    each platform pushes <version>-linux-<arch> first; the final
+#              tags are created atomically by the merge job, so a partial
+#              final tag can never exist mid-build.
+#   - buildx:  pinned to v0.31.0 in merge (docker/buildx#3708: imagetools
+#              create is broken on GHCR since v0.31.1).
+
 name: Release image
 
 on:
@@ -5,16 +23,60 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
-env:
-  IMAGE: ghcr.io/ushitora-anqou/sumomo
-
 jobs:
-  release:
+  # ── Meta: image name from the flake, final tags from the tag ref ──────────
+  meta:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    outputs:
+      repo: ${{ steps.flake-meta.outputs.repo }}
+      build_tag: ${{ steps.flake-meta.outputs.build_tag }}
+      tags: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: Extract image metadata from the flake
+        id: flake-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          meta="$(nix eval --json .#sumomo-image --apply 'p: {repo = p.imageName; tag = p.imageTag;}')"
+          repo="$(printf '%s' "$meta" | jq -r .repo)"
+          build_tag="$(printf '%s' "$meta" | jq -r .tag)"
+          {
+            echo "repo=${repo}"
+            echo "build_tag=${build_tag}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.flake-meta.outputs.repo }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+  # ── Per-platform build (native runner, per-arch tag push) ─────────────────
+  build:
+    name: build - ${{ matrix.platform }}
+    needs: meta
+    # NOTE: do NOT use matrix.include for platform->runner mapping.
+    # If the include entry's platform value isn't in the matrix, GitHub Actions
+    # treats it as a NEW combination and spawns an unwanted extra build.
+    # Use an inline ternary instead. runs-on supports expressions.
+    runs-on: ${{ contains(matrix.platform, 'arm64') && 'ubuntu-26.04-arm' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ["linux/amd64", "linux/arm64"]
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
@@ -23,22 +85,104 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build images (amd64 + arm64 via nix cross)
+      # `nix build .#sumomo-image` resolves to the runner's native system:
+      # packages.x86_64-linux on amd64, packages.aarch64-linux on arm64.
+      - name: Build the Docker image with nix
+        run: nix build .#sumomo-image
+      - name: Load image and push per-arch tag
+        id: push
+        env:
+          REPO: ${{ needs.meta.outputs.repo }}
+          BUILD_TAG: ${{ needs.meta.outputs.build_tag }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        shell: bash
         run: |
-          nix build .#sumomo-image --print-out-paths --out-link image-amd64
-          nix build .#sumomo-image-arm64 --print-out-paths --out-link image-arm64
-      - name: Push multi-arch image
+          set -euo pipefail
+          docker load -i result
+          safe="${PLATFORM//\//-}"  # linux/arm64 -> linux-arm64
+          per_arch="${REPO}:${VERSION}-${safe}"
+          docker tag "${REPO}:${BUILD_TAG}" "${per_arch}"
+          docker push "${per_arch}"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "${per_arch}" | cut -d@ -f2)"
+          if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+            echo "::error::No digest produced (${PLATFORM})"
+            exit 1
+          fi
+          mkdir -p /tmp/digest
+          printf '%s\n' "$digest" > "/tmp/digest/digest-${safe}.txt"
+          echo "safe=${safe}" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${PLATFORM}: ${per_arch} ${digest}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ steps.push.outputs.safe }}
+          path: /tmp/digest
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── Merge: create the final multi-arch tags atomically ────────────────────
+  merge:
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx (pinned)
+        uses: docker/setup-buildx-action@v4
+        with:
+          # docker/buildx#3708: imagetools create is broken on GHCR since v0.31.1.
+          version: v0.31.0
+      - name: Download per-platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Merge multi-arch manifest
+        env:
+          REPO: ${{ needs.meta.outputs.repo }}
+          TAGS: ${{ needs.meta.outputs.tags }}
+        shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          docker load < image-amd64
-          docker load < image-arm64
-          docker tag sumomo:latest        "$IMAGE:$VERSION-amd64"
-          docker tag sumomo:latest-arm64  "$IMAGE:$VERSION-arm64"
-          docker push "$IMAGE:$VERSION-amd64"
-          docker push "$IMAGE:$VERSION-arm64"
-          docker manifest create "$IMAGE:$VERSION" \
-            "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-arm64"
-          docker manifest create "$IMAGE:latest" \
-            "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-arm64"
-          docker manifest push "$IMAGE:$VERSION"
-          docker manifest push "$IMAGE:latest"
+          set -euo pipefail
+          mapfile -t files < <(find digests -type f -print | sort)
+          if [ "${#files[@]}" -lt 1 ]; then
+            echo "::error::No digest files found"
+            exit 1
+          fi
+          sources=()
+          for f in "${files[@]}"; do
+            d="$(tr -d '[:space:]' < "$f")"
+            case "$d" in
+              sha256:*) : ;;
+              *) echo "::error::Bad digest in $f: $d"; exit 1 ;;
+            esac
+            sources+=("${REPO}@${d}")
+          done
+          tag_args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            tag_args+=(-t "$t")
+          done <<< "${TAGS}"
+          if [ "${#tag_args[@]}" -lt 1 ]; then
+            echo "::error::No final tags produced by metadata-action"
+            exit 1
+          fi
+          echo "Merging ${#files[@]} arch(s) -> ${#tag_args[@]} tag(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+      - name: Verify merged manifests
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            echo "::group::${t}"
+            docker buildx imagetools inspect "${t}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          done <<< "${TAGS}"

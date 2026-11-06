@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: sumomo
-        image: sumomo:latest
+        image: ghcr.io/ushitora-anqou/sumomo:latest
         imagePullPolicy: Never
         args:
         - --listen

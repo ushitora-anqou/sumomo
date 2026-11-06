@@ -76,10 +76,11 @@ kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null
 
 # --- 2. sumomo image ----------------------------------------------------
 log "building and loading the sumomo image"
+IMAGE=ghcr.io/ushitora-anqou/sumomo:latest
 IMG=$(nix build "$ROOT#sumomo-image" --print-out-paths --no-link | tail -1)
 [ -n "$IMG" ] || fail "nix build .#sumomo-image failed"
 docker load < "$IMG" >/dev/null
-kind load docker-image sumomo:latest --name "$CLUSTER" >/dev/null
+kind load docker-image "$IMAGE" --name "$CLUSTER" >/dev/null
 
 # --- 3. sumomo + postgres + redis --------------------------------------
 log "deploying sumomo, postgres, redis"

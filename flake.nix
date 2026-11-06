@@ -7,10 +7,14 @@
 
   outputs = { self, nixpkgs }:
     let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      # Every output exists for both server architectures so that
+      # `nix build .#sumomo-image` resolves to the current machine's
+      # native system. CI uses this to build the arm64 image natively on
+      # arm64 runners (no cross-compilation, no emulation).
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Build the Go server for the given package set (native or cross).
+      # Build the Go server for the given (native) package set.
       # "go install" names the binary after the module path's last
       # component, which is already "sumomo".
       sumomoFor = p: p.buildGoModule {
@@ -22,8 +26,10 @@
 
       # OCI image wrapping the server and llama.cpp. The GGUF model is NOT
       # baked in; mount it at /models and pass --model /models/<file>.gguf.
+      # imageName/imageTag are read by the release workflow via
+      # `nix eval` to name the pushed image.
       sumomoImageFor = tag: p: server: p.dockerTools.buildImage {
-        name = "sumomo";
+        name = "ghcr.io/ushitora-anqou/sumomo";
         inherit tag;
         copyToRoot = p.buildEnv {
           name = "sumomo-image-root";
@@ -45,25 +51,16 @@
         };
       };
 
-      sumomo = sumomoFor pkgs;
-      sumomo-image = sumomoImageFor "latest" pkgs sumomo;
-
-      # armv8 (aarch64) build, cross-compiled from x86_64 via nixpkgs
-      # cross toolchains (no emulation required).
-      pkgsArm = pkgs.pkgsCross.aarch64-multiplatform;
-      sumomo-arm64 = sumomoFor pkgsArm;
-      sumomo-image-arm64 = sumomoImageFor "latest-arm64" pkgsArm sumomo-arm64;
-
-      pythonEnv = pkgs.python313.withPackages (ps: with ps; [
+      pythonEnvFor = p: p.python313.withPackages (ps: with ps; [
         requests
       ]);
     in
     {
-      devShells.${system} = {
+      devShells = forAllSystems (pkgs: {
         # Development: Go + Python + llama.cpp CLI tools.
         default = pkgs.mkShell {
           packages = [
-            pythonEnv
+            (pythonEnvFor pkgs)
             pkgs.go
             pkgs.llama-cpp
           ];
@@ -81,50 +78,53 @@
             python3
           ];
         };
-      };
+      });
 
-      packages.${system} = {
-        inherit
-          sumomo
-          sumomo-image
-          sumomo-arm64
-          sumomo-image-arm64;
-        default = sumomo;
-      };
+      packages = forAllSystems (pkgs:
+        let
+          sumomo = sumomoFor pkgs;
+        in
+        {
+          inherit sumomo;
+          sumomo-image = sumomoImageFor "latest" pkgs sumomo;
+          default = sumomo;
+        });
 
-      apps.${system} = {
-        # Main: the LibreTranslate-compatible server.
-        # nix run .#sumomo [-- --listen 127.0.0.1:5000]
-        sumomo = {
-          type = "app";
-          meta.description = "LibreTranslate-compatible API server (sumomo)";
-          program = "${pkgs.writeShellScript "run-sumomo" ''
-            export LLAMA_SERVER_BIN="${pkgs.llama-cpp}/bin/llama-server"
-            exec ${sumomo}/bin/sumomo "$@"
-          ''}";
-        };
+      apps = forAllSystems (pkgs:
+        let
+          sumomoDrv = sumomoFor pkgs;
+        in
+        rec {
+          # Main: the LibreTranslate-compatible server.
+          # nix run .#sumomo [-- --listen 127.0.0.1:5000]
+          sumomo = {
+            type = "app";
+            meta.description = "LibreTranslate-compatible API server (sumomo)";
+            program = "${pkgs.writeShellScript "run-sumomo" ''
+              export LLAMA_SERVER_BIN="${pkgs.llama-cpp}/bin/llama-server"
+              exec ${sumomoDrv}/bin/sumomo "$@"
+            ''}";
+          };
 
-        # Sub: helper scripts.
-        # nix run .#download-model [-- --quant Q4_K_M]
-        download-model = {
-          type = "app";
-          meta.description = "Download the official plamo-3-translate-0.8b GGUF";
-          program = "${pkgs.writeShellScript "sumomo-download-model" ''
-            exec ${pythonEnv}/bin/python ${self}/scripts/download_model.py "$@"
-          ''}";
-        };
+          # Sub: helper scripts.
+          # nix run .#download-model [-- --quant Q4_K_M]
+          download-model = {
+            type = "app";
+            meta.description = "Download the official plamo-3-translate-0.8b GGUF";
+            program = "${pkgs.writeShellScript "sumomo-download-model" ''
+              exec ${pythonEnvFor pkgs}/bin/python ${self}/scripts/download_model.py "$@"
+            ''}";
+          };
 
-        # nix run .#translate -- --target-lang en "こんにちは"
-        translate = {
-          type = "app";
-          meta.description = "Translate text from the command line";
-          program = "${pkgs.writeShellScript "sumomo-translate" ''
-            export LLAMA_SERVER_BIN="${pkgs.llama-cpp}/bin/llama-server"
-            exec ${pythonEnv}/bin/python ${self}/scripts/translate.py "$@"
-          ''}";
-        };
-
-        default = self.apps.${system}.sumomo;
-      };
+          # nix run .#translate -- --target-lang en "こんにちは"
+          translate = {
+            type = "app";
+            meta.description = "Translate text from the command line";
+            program = "${pkgs.writeShellScript "sumomo-translate" ''
+              export LLAMA_SERVER_BIN="${pkgs.llama-cpp}/bin/llama-server"
+              exec ${pythonEnvFor pkgs}/bin/python ${self}/scripts/translate.py "$@"
+            ''}";
+          };
+        });
     };
 }

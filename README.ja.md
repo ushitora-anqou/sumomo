@@ -99,7 +99,8 @@ CI(GitHub Actions)のワークフローは次のとおりです。
 - **E2E**(`e2e.yml`): `make test-e2e` を実行し Mastodon 連携を検証
 - **Release image**(`release.yml`): `v*` タグの push で amd64 + arm64 の
   マルチアーキイメージをビルドして `ghcr.io/ushitora-anqou/sumomo` に公開
-  (arm64 は Nix のクロスコンパイルによるビルド)
+  (各アーキテクチャを GitHub Actions のネイティブ runner でビルド。
+  クロスコンパイルは不使用)
 
 ## リリース
 

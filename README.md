@@ -101,7 +101,8 @@ CI (GitHub Actions) workflows:
 - **E2E** (`e2e.yml`): runs `make test-e2e` to verify the Mastodon integration
 - **Release image** (`release.yml`): on pushing a `v*` tag, builds and
   publishes the amd64 + arm64 multi-arch image to
-  `ghcr.io/ushitora-anqou/sumomo` (arm64 is cross-compiled with Nix)
+  `ghcr.io/ushitora-anqou/sumomo`; each architecture is built natively on
+  its own GitHub Actions runner (arm64 runners; no cross-compilation)
 
 ## Release
 
