@@ -89,6 +89,7 @@ $ make test-e2e
 $ nix develop          # Go + Python + llama.cpp CLI
 $ make vet             # gofmt チェック + go vet
 $ make fmt             # gofmt
+$ make test            # サーバーのユニットテスト
 $ make build           # Go バイナリを bin/sumomo にビルド
 $ make build-image     # 実行アーキテクチャのコンテナイメージをビルド
 ```

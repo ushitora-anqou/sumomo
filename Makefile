@@ -1,4 +1,4 @@
-.PHONY: build build-image vet fmt test-e2e release
+.PHONY: build build-image vet fmt test test-e2e release
 
 NIX ?= nix
 
@@ -17,6 +17,10 @@ vet:
 ## fmt: gofmt the server sources
 fmt:
 	$(NIX) develop -c sh -c 'cd server && gofmt -w .'
+
+## test: run the server unit tests
+test:
+	$(NIX) develop -c sh -c 'cd server && go test ./...'
 
 ## test-e2e: deploy Mastodon on kind with sumomo as its translation
 ## backend and verify translation through Mastodon's API

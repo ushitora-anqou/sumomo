@@ -47,16 +47,10 @@ func main() {
 	log.Printf("llama-server ready (model=%s)", cfg.modelPath)
 
 	s := &server{cfg: cfg, llama: llama}
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /translate", s.handleTranslate)
-	mux.HandleFunc("GET /languages", s.handleLanguages)
-	mux.HandleFunc("POST /detect", s.handleDetect)
-	mux.HandleFunc("GET /frontend/settings", s.handleFrontendSettings)
-	mux.HandleFunc("GET /health", s.handleHealth)
 
 	httpSrv := &http.Server{
 		Addr:    cfg.listen,
-		Handler: cors(mux),
+		Handler: cors(s.routes()),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

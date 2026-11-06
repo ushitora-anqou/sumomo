@@ -50,6 +50,17 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+// routes builds the LibreTranslate-compatible API routing table.
+func (s *server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /translate", s.handleTranslate)
+	mux.HandleFunc("GET /languages", s.handleLanguages)
+	mux.HandleFunc("POST /detect", s.handleDetect)
+	mux.HandleFunc("GET /frontend/settings", s.handleFrontendSettings)
+	mux.HandleFunc("GET /health", s.handleHealth)
+	return mux
+}
+
 type translateRequest struct {
 	texts        []string
 	single       bool

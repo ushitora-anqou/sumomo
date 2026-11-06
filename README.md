@@ -91,6 +91,7 @@ $ make test-e2e
 $ nix develop          # Go + Python + llama.cpp CLI
 $ make vet             # gofmt check + go vet
 $ make fmt             # gofmt
+$ make test            # server unit tests
 $ make build           # build the Go server binary into bin/sumomo
 $ make build-image     # build the native-architecture container image
 ```
