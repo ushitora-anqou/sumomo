@@ -33,3 +33,6 @@ go.work.sum
 # .vscode/
 
 models/
+
+# make build output
+bin/

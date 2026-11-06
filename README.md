@@ -91,7 +91,8 @@ $ make test-e2e
 $ nix develop          # Go + Python + llama.cpp CLI
 $ make vet             # gofmt check + go vet
 $ make fmt             # gofmt
-$ make build           # build the amd64 container image
+$ make build           # build the Go server binary into bin/sumomo
+$ make build-image     # build the native-architecture container image
 ```
 
 CI (GitHub Actions) workflows:
@@ -105,11 +106,12 @@ CI (GitHub Actions) workflows:
 ## Release
 
 ```console
-$ make release VERSION=v0.1.0
+$ make release VERSION=0.1.0
 ```
 
-This creates and pushes a Git tag and opens the GitHub release. Publishing
-the multi-arch Docker image is triggered by the tag push.
+A leading `v` is optional and added if missing. This creates and pushes a
+Git tag (`v0.1.0`) and opens the GitHub release. Publishing the multi-arch
+Docker image is triggered by the tag push.
 
 ## Helper scripts
 

@@ -89,7 +89,8 @@ $ make test-e2e
 $ nix develop          # Go + Python + llama.cpp CLI
 $ make vet             # gofmt チェック + go vet
 $ make fmt             # gofmt
-$ make build           # amd64 コンテナイメージのビルド
+$ make build           # Go バイナリを bin/sumomo にビルド
+$ make build-image     # 実行アーキテクチャのコンテナイメージをビルド
 ```
 
 CI(GitHub Actions)のワークフローは次のとおりです。
@@ -103,11 +104,12 @@ CI(GitHub Actions)のワークフローは次のとおりです。
 ## リリース
 
 ```console
-$ make release VERSION=v0.1.0
+$ make release VERSION=0.1.0
 ```
 
-Git タグの作成・push と GitHub Release の作成を行います。タグの push に
-連動して CI がマルチアーキ Docker イメージを公開します。
+先頭の `v` は省略でき、必要に応じて補われます。Git タグ(`v0.1.0`)の
+作成・push と GitHub Release の作成を行います。タグの push に連動して
+CI がマルチアーキ Docker イメージを公開します。
 
 ## 補助スクリプト
 
