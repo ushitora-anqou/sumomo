@@ -391,8 +391,3 @@ func (s *server) handleFrontendSettings(w http.ResponseWriter, r *http.Request) 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-
-func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(uiHTML)
-}

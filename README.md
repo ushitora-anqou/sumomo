@@ -33,8 +33,6 @@ $ curl -s http://127.0.0.1:5000/translate -H 'Content-Type: application/json' \
 {"translatedText":"The meeting has been rescheduled for next Monday."}
 ```
 
-Open `http://127.0.0.1:5000/` in a browser for a simple translation UI.
-
 ## API
 
 The API is compatible with LibreTranslate's.

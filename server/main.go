@@ -10,12 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	_ "embed"
 )
-
-//go:embed ui.html
-var uiHTML []byte
 
 type config struct {
 	listen         string
@@ -53,7 +48,6 @@ func main() {
 
 	s := &server{cfg: cfg, llama: llama}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("POST /translate", s.handleTranslate)
 	mux.HandleFunc("GET /languages", s.handleLanguages)
 	mux.HandleFunc("POST /detect", s.handleDetect)
