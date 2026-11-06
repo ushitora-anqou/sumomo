@@ -97,7 +97,8 @@ $ make build-image     # 実行アーキテクチャのコンテナイメージ�
 
 CI(GitHub Actions)のワークフローは次のとおりです。
 
-- **CI**(`ci.yml`): flake check、gofmt/go vet、サーバーとイメージのビルド
+- **CI**(`ci.yml`): flake check、`make lint`(golangci-lint)、`make test`
+  (ユニットテスト)、`make vet`、サーバーパッケージとイメージのビルド
 - **E2E**(`e2e.yml`): `make test-e2e` を実行し Mastodon 連携を検証
 - **Release image**(`release.yml`): `v*` タグの push で amd64 + arm64 の
   マルチアーキイメージをビルドして `ghcr.io/ushitora-anqou/sumomo` に公開

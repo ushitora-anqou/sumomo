@@ -99,7 +99,8 @@ $ make build-image     # build the native-architecture container image
 
 CI (GitHub Actions) workflows:
 
-- **CI** (`ci.yml`): flake check, gofmt/go vet, builds of the server and the image
+- **CI** (`ci.yml`): flake check, `make lint` (golangci-lint), `make test`
+  (unit tests), `make vet`, and builds of the server package and the image
 - **E2E** (`e2e.yml`): runs `make test-e2e` to verify the Mastodon integration
 - **Release image** (`release.yml`): on pushing a `v*` tag, builds and
   publishes the amd64 + arm64 multi-arch image to

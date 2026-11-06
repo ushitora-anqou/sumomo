@@ -14,9 +14,9 @@ build-image:
 lint:
 	$(NIX) develop -c sh -c 'cd server && golangci-lint run'
 
-## vet: go vet the server sources
+## vet: gofmt check + go vet the server sources
 vet:
-	$(NIX) develop -c sh -c 'cd server && gofmt -l . && go vet ./...'
+	$(NIX) develop -c sh -c 'cd server && test -z "$$(gofmt -l .)" && go vet ./...'
 
 ## fmt: gofmt the server sources
 fmt:

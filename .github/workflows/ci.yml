@@ -14,9 +14,13 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - name: Flake check
         run: nix flake check --no-build
-      - name: Go format & vet
-        run: nix develop -c sh -c 'cd server && test -z "$(gofmt -l .)" && go vet ./...'
-      - name: Build server and image
+      - name: Lint
+        run: make lint
+      - name: Unit tests
+        run: make test
+      - name: Vet
+        run: make vet
+      - name: Build server package and image
         run: |
-          nix build .#sumomo
-          nix build .#sumomo-image --no-link
+          nix build .#sumomo --no-link
+          make build-image
