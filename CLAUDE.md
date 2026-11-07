@@ -41,6 +41,7 @@ in `nix develop`). CI loads the same shell with the SHA-pinned
 | `make build` | build the Go server binary into `bin/sumomo` |
 | `make build-image` | build the native-architecture container image with Nix |
 | `make test-e2e` | E2E: Mastodon on a kind cluster with sumomo as its translation backend |
+| `make bench` | CPU/memory benchmark of sumomo + llama-server under translation load (`SUMOMO_ARGS` forwards flags) |
 | `make release VERSION=X.Y.Z` | create/push the `v`-prefixed tag and open the GitHub release |
 
 Before finishing a change to `server/`, run `make lint` and `make test`.

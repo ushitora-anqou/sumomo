@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -260,6 +262,46 @@ func waitForQueueLen(t *testing.T, mock *llamaServer, want int) {
 			t.Fatalf("queue length %d, want %d (timed out)", len(mock.jobs), want)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestLlamaServerArgs verifies thread selection: an explicit --threads
+// wins, while the 0 (auto) default resolves to half the logical CPUs so
+// hyper-thread contention does not double CPU usage.
+func TestLlamaServerArgs(t *testing.T) {
+	cfg := &config{modelPath: "m.gguf", nCtx: 4096, threads: 3}
+	got := llamaServerArgs(cfg, 5123)
+	want := []string{
+		"-m", "m.gguf",
+		"--host", "127.0.0.1",
+		"--port", "5123",
+		"-c", "4096",
+		"-t", "3",
+		"--no-webui",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("llamaServerArgs() = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("llamaServerArgs()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	cfg.threads = 0 // auto
+	got = llamaServerArgs(cfg, 5123)
+	wantThreads := strconv.Itoa(max(runtime.NumCPU()/2, 1))
+	found := false
+	for i, a := range got {
+		if a == "-t" && i+1 < len(got) {
+			found = true
+			if got[i+1] != wantThreads {
+				t.Errorf("auto -t = %q, want %q (half of %d CPUs)", got[i+1], wantThreads, runtime.NumCPU())
+			}
+		}
+	}
+	if !found {
+		t.Errorf("llamaServerArgs() with auto threads has no -t flag: %v", got)
 	}
 }
 

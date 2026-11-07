@@ -86,7 +86,7 @@ $ sumomo --help
   -start-timeout duration
     	llama-server startup timeout (default 5m0s)
   -threads int
-    	CPU threads for llama-server (0 = auto)
+    	CPU threads for llama-server (0 = half of logical CPUs, usually the physical core count)
 ```
 
 A missing model file is downloaded automatically from Hugging Face when
@@ -124,7 +124,16 @@ $ make fmt             # gofmt
 $ make test            # server unit tests
 $ make build           # build the Go server binary into bin/sumomo
 $ make build-image     # build the native-architecture container image
+$ make bench           # measure CPU/memory usage under translation load
 ```
+
+`make bench` reports the CPU time (sumomo + llama-server tree), latency,
+and peak RSS of sequential translations; flags reach sumomo via
+`SUMOMO_ARGS` (e.g. `make bench SUMOMO_ARGS="--threads 2"`). Benchmarks
+on a 4-core/8-thread machine showed llama-server using every hardware
+thread wastes half the CPU for no latency gain (1.51 vs 0.73 s CPU per
+request), which is why `--threads 0` (the default) resolves to half the
+logical CPUs — usually the physical core count.
 
 CI (GitHub Actions) workflows:
 

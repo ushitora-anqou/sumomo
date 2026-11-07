@@ -32,7 +32,7 @@ func main() {
 	flag.StringVar(&cfg.modelPath, "model", "models/plamo-3-translate-0.8b-Q4_K_M.gguf", "path to the GGUF model file")
 	flag.StringVar(&cfg.llamaServerBin, "llama-server-bin", "", "path to llama-server (default: $LLAMA_SERVER_BIN or PATH)")
 	flag.IntVar(&cfg.nCtx, "n-ctx", 4096, "llama-server context window in tokens")
-	flag.IntVar(&cfg.threads, "threads", 0, "CPU threads for llama-server (0 = auto)")
+	flag.IntVar(&cfg.threads, "threads", 0, "CPU threads for llama-server (0 = half of logical CPUs, usually the physical core count)")
 	flag.IntVar(&cfg.maxTokens, "max-tokens", 512, "base generation limit; grows with input length")
 	flag.StringVar(&cfg.apiKey, "api-key", "", "require this API key for /translate and /detect (empty = open)")
 	// 1500 matches the longest text Mastodon submits for translation:

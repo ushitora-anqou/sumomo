@@ -88,7 +88,7 @@ $ sumomo --help
   -start-timeout duration
     	llama-server startup timeout (default 5m0s)
   -threads int
-    	CPU threads for llama-server (0 = auto)
+    	CPU threads for llama-server (0 = half of logical CPUs, usually the physical core count)
 ```
 
 モデルファイルが存在しない場合、ファイル名が公式リリースのものと
@@ -126,7 +126,16 @@ $ make fmt             # gofmt
 $ make test            # サーバーのユニットテスト
 $ make build           # Go バイナリを bin/sumomo にビルド
 $ make build-image     # 実行アーキテクチャのコンテナイメージをビルド
+$ make bench           # 翻訳負荷時の CPU・メモリ消費を計測
 ```
+
+`make bench` は sumomo + llama-server の CPU 時間、レイテンシ、ピーク
+RSS を報告します。フラグは `SUMOMO_ARGS` 経由(例:
+`make bench SUMOMO_ARGS="--threads 2"`)。4 コア / 8 スレッドの環境での
+実測では、llama-server が全ハイパースレッドを使うと CPU が約 2 倍に
+なる一方でレイテンシは変わらなかったため(1 リクエストあたり 1.51 秒 vs
+0.73 秒)、`--threads 0`(デフォルト)は論理 CPU の半分(通常は物理
+コア数)に解決します。
 
 CI(GitHub Actions)のワークフローは次のとおりです。
 

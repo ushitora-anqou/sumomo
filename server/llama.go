@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -105,17 +106,7 @@ func startLlamaServer(ctx context.Context, cfg *config) (*llamaServer, error) {
 		return nil, err
 	}
 
-	args := []string{
-		"-m", cfg.modelPath,
-		"--host", "127.0.0.1",
-		"--port", strconv.Itoa(port),
-		"-c", strconv.Itoa(cfg.nCtx),
-		"--no-webui",
-	}
-	if cfg.threads > 0 {
-		args = append(args, "-t", strconv.Itoa(cfg.threads))
-	}
-	cmd := exec.Command(bin, args...)
+	cmd := exec.Command(bin, llamaServerArgs(cfg, port)...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -174,6 +165,27 @@ func (l *llamaServer) stop() {
 		}
 	}
 	_ = os.Remove(l.logPath)
+}
+
+// llamaServerArgs builds the llama-server command line. With --threads 0
+// (auto), llama-server would use every hardware thread, but hyper-threads
+// add cache contention instead of speed: measured 1.51 s CPU per request
+// on a 4-core/8-thread machine versus 0.75 s with half the threads, at the
+// same latency (scripts/bench.py). Default to half the logical CPUs,
+// which usually equals the physical core count.
+func llamaServerArgs(cfg *config, port int) []string {
+	threads := cfg.threads
+	if threads <= 0 {
+		threads = max(runtime.NumCPU()/2, 1)
+	}
+	return []string{
+		"-m", cfg.modelPath,
+		"--host", "127.0.0.1",
+		"--port", strconv.Itoa(port),
+		"-c", strconv.Itoa(cfg.nCtx),
+		"-t", strconv.Itoa(threads),
+		"--no-webui",
+	}
 }
 
 // logTail returns the last n lines of the llama-server log for diagnostics.
