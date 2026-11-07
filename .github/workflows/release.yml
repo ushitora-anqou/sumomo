@@ -36,8 +36,8 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v23
       - name: Extract image metadata from the flake
         id: flake-meta
         shell: bash
@@ -57,7 +57,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.flake-meta.outputs.repo }}
           tags: |
@@ -78,8 +78,8 @@ jobs:
       matrix:
         platform: ["linux/amd64", "linux/arm64"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v23
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -114,7 +114,7 @@ jobs:
           echo "safe=${safe}" >> "$GITHUB_OUTPUT"
           echo "Pushed ${PLATFORM}: ${per_arch} ${digest}" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ steps.push.outputs.safe }}
           path: /tmp/digest
@@ -137,7 +137,7 @@ jobs:
           # docker/buildx#3708: imagetools create is broken on GHCR since v0.31.1.
           version: v0.31.0
       - name: Download per-platform digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           path: digests
