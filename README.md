@@ -93,8 +93,12 @@ $ make test-e2e
 
 ## Development
 
+The toolchain lives in the Nix dev shell, loaded automatically by
+[direnv](https://direnv.net/) (`use flake` in `.envrc`). It contains
+everything the Make targets need, including the E2E tooling:
+
 ```console
-$ nix develop          # Go + Python + llama.cpp CLI
+$ direnv allow         # load the dev shell (Go, Python, llama.cpp, kind, ...)
 $ make lint            # golangci-lint
 $ make vet             # gofmt check + go vet
 $ make fmt             # gofmt
@@ -106,7 +110,10 @@ $ make build-image     # build the native-architecture container image
 CI (GitHub Actions) workflows:
 
 - **CI** (`ci.yml`): flake check, `make lint` (golangci-lint), `make test`
-  (unit tests), `make vet`, and builds of the server package and the image
+  (unit tests), `make vet`, and builds of the server package and the image;
+  the dev shell is loaded with
+  [nix-develop](https://github.com/nicknovitski/nix-develop) (pinned by
+  commit SHA) so the Make targets run the same way as with direnv locally
 - **E2E** (`e2e.yml`): runs `make test-e2e` to verify the Mastodon integration
 - **Release image** (`release.yml`): on pushing a `v*` tag, builds and
   publishes the amd64 + arm64 multi-arch image to

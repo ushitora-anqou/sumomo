@@ -2,9 +2,12 @@
 
 NIX ?= nix
 
+# All targets assume the direnv-loaded dev shell (.envrc: `use flake`),
+# so they run commands directly instead of wrapping them in nix develop.
+
 ## build: build the Go server binary into bin/sumomo
 build:
-	$(NIX) develop -c sh -c 'cd server && go build -o ../bin/sumomo .'
+	cd server && go build -o ../bin/sumomo .
 
 ## build-image: build the native-architecture container image archive
 build-image:
@@ -12,24 +15,24 @@ build-image:
 
 ## lint: golangci-lint the server sources
 lint:
-	$(NIX) develop -c sh -c 'cd server && golangci-lint run'
+	cd server && golangci-lint run
 
 ## vet: gofmt check + go vet the server sources
 vet:
-	$(NIX) develop -c sh -c 'cd server && test -z "$$(gofmt -l .)" && go vet ./...'
+	cd server && test -z "$$(gofmt -l .)" && go vet ./...
 
 ## fmt: gofmt the server sources
 fmt:
-	$(NIX) develop -c sh -c 'cd server && gofmt -w .'
+	cd server && gofmt -w .
 
 ## test: run the server unit tests
 test:
-	$(NIX) develop -c sh -c 'cd server && go test ./...'
+	cd server && go test ./...
 
 ## test-e2e: deploy Mastodon on kind with sumomo as its translation
 ## backend and verify translation through Mastodon's API
 test-e2e:
-	$(NIX) develop .#e2e -c bash scripts/e2e.sh
+	bash scripts/e2e.sh
 
 ## release: tag VERSION (e.g. 0.1.0; a leading "v" is optional and
 ## added if missing), push the tag, and create a GitHub release.

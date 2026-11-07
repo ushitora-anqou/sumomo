@@ -14,8 +14,10 @@ dependencies (stdlib only).
 
 ## Commands
 
-All Make targets run inside the Nix dev shell, so no local toolchain is
-needed.
+The toolchain lives in the Nix dev shell, loaded via direnv (`use flake` in
+`.envrc`) — assume it is active and run commands directly (never wrap them
+in `nix develop`). CI loads the same shell with the SHA-pinned
+`nicknovitski/nix-develop` action.
 
 | Command | Description |
 |---|---|

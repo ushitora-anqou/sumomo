@@ -91,8 +91,12 @@ $ make test-e2e
 
 ## 開発
 
+ツールチェーンは Nix の dev shell にあり、[direnv](https://direnv.net/)
+(`.envrc` の `use flake`)が自動的にロードします。Make ターゲットに
+必要なもの(E2E 用の kind なども)がすべて揃っています。
+
 ```console
-$ nix develop          # Go + Python + llama.cpp CLI
+$ direnv allow         # dev shell をロード(Go、Python、llama.cpp、kind など)
 $ make lint            # golangci-lint
 $ make vet             # gofmt チェック + go vet
 $ make fmt             # gofmt
@@ -104,7 +108,10 @@ $ make build-image     # 実行アーキテクチャのコンテナイメージ�
 CI(GitHub Actions)のワークフローは次のとおりです。
 
 - **CI**(`ci.yml`): flake check、`make lint`(golangci-lint)、`make test`
-  (ユニットテスト)、`make vet`、サーバーパッケージとイメージのビルド
+  (ユニットテスト)、`make vet`、サーバーパッケージとイメージのビルド。
+  dev shell は [nix-develop](https://github.com/nicknovitski/nix-develop)
+  (コミット SHA でピン)でロードし、ローカルの direnv と同じ形で
+  Make ターゲットを実行します
 - **E2E**(`e2e.yml`): `make test-e2e` を実行し Mastodon 連携を検証
 - **Release image**(`release.yml`): `v*` タグの push で amd64 + arm64 の
   マルチアーキイメージをビルドして `ghcr.io/ushitora-anqou/sumomo` に公開

@@ -13,6 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
+      # Load the dev shell (like direnv does locally) for the make targets.
+      - uses: nicknovitski/nix-develop@9be7cfb4b10451d3390a75dc18ad0465bed4932a # v1
       - name: Flake check
         run: nix flake check --no-build
       - name: Lint

@@ -57,26 +57,22 @@
     in
     {
       devShells = forAllSystems (pkgs: {
-        # Development: Go + Python + llama.cpp CLI tools.
+        # Development shell, loaded via direnv (`use flake` in .envrc).
+        # Contains everything the Make targets need, including the E2E
+        # tooling (kind/kubectl/helm), so the Makefile can run commands
+        # directly without wrapping them in `nix develop`.
         default = pkgs.mkShell {
           packages = [
             (pythonEnvFor pkgs)
             pkgs.go
             pkgs.golangci-lint
             pkgs.llama-cpp
-          ];
-        };
-
-        # Everything scripts/e2e.sh needs (kind cluster + Mastodon).
-        e2e = pkgs.mkShell {
-          packages = with pkgs; [
-            kind
-            kubectl
-            kubernetes-helm
-            jq
-            curl
-            openssl
-            python3
+            pkgs.kind
+            pkgs.kubectl
+            pkgs.kubernetes-helm
+            pkgs.jq
+            pkgs.curl
+            pkgs.openssl
           ];
         };
       });

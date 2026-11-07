@@ -13,5 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
+      # Load the dev shell (like direnv does locally) for make test-e2e.
+      - uses: nicknovitski/nix-develop@9be7cfb4b10451d3390a75dc18ad0465bed4932a # v1
       - name: Run e2e test (Mastodon + sumomo on kind)
         run: make test-e2e
