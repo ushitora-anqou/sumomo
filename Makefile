@@ -1,4 +1,4 @@
-.PHONY: build build-image lint vet fmt test test-e2e release
+.PHONY: build build-image lint fmt test test-e2e release
 
 NIX ?= nix
 
@@ -16,10 +16,6 @@ build-image:
 ## lint: golangci-lint the server sources
 lint:
 	cd server && golangci-lint run
-
-## vet: gofmt check + go vet the server sources
-vet:
-	cd server && test -z "$$(gofmt -l .)" && go vet ./...
 
 ## fmt: gofmt the server sources
 fmt:

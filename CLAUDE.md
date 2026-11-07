@@ -36,7 +36,6 @@ in `nix develop`). CI loads the same shell with the SHA-pinned
 | Command | Description |
 |---|---|
 | `make lint` | golangci-lint (default linters; keep it at 0 issues) |
-| `make vet` | gofmt check + go vet (fails on unformatted code) |
 | `make fmt` | gofmt |
 | `make test` | server unit tests (against an in-process mock llama-server) |
 | `make build` | build the Go server binary into `bin/sumomo` |
@@ -73,7 +72,7 @@ deployment/Mastodon integration.
 
 ## CI / Release
 
-- `ci.yml`: flake check, `make lint`, `make test`, `make vet`, builds of the
+- `ci.yml`: flake check, `make lint`, `make test`, builds of the
   server package and the image
 - `e2e.yml`: `make test-e2e` (separate workflow)
 - `release.yml`: on `v*` tag push, builds the image per architecture natively

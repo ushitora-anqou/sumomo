@@ -117,7 +117,6 @@ $ make test-e2e
 ```console
 $ direnv allow         # dev shell をロード(Go、Python、llama.cpp、kind など)
 $ make lint            # golangci-lint
-$ make vet             # gofmt チェック + go vet
 $ make fmt             # gofmt
 $ make test            # サーバーのユニットテスト
 $ make build           # Go バイナリを bin/sumomo にビルド
@@ -127,7 +126,7 @@ $ make build-image     # 実行アーキテクチャのコンテナイメージ�
 CI(GitHub Actions)のワークフローは次のとおりです。
 
 - **CI**(`ci.yml`): flake check、`make lint`(golangci-lint)、`make test`
-  (ユニットテスト)、`make vet`、サーバーパッケージとイメージのビルド。
+  (ユニットテスト)、サーバーパッケージとイメージのビルド。
   dev shell は [nix-develop](https://github.com/nicknovitski/nix-develop)
   (コミット SHA でピン)でロードし、ローカルの direnv と同じ形で
   Make ターゲットを実行します

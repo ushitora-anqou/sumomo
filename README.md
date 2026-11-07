@@ -115,7 +115,6 @@ everything the Make targets need, including the E2E tooling:
 ```console
 $ direnv allow         # load the dev shell (Go, Python, llama.cpp, kind, ...)
 $ make lint            # golangci-lint
-$ make vet             # gofmt check + go vet
 $ make fmt             # gofmt
 $ make test            # server unit tests
 $ make build           # build the Go server binary into bin/sumomo
@@ -125,7 +124,7 @@ $ make build-image     # build the native-architecture container image
 CI (GitHub Actions) workflows:
 
 - **CI** (`ci.yml`): flake check, `make lint` (golangci-lint), `make test`
-  (unit tests), `make vet`, and builds of the server package and the image;
+  (unit tests), and builds of the server package and the image;
   the dev shell is loaded with
   [nix-develop](https://github.com/nicknovitski/nix-develop) (pinned by
   commit SHA) so the Make targets run the same way as with direnv locally
