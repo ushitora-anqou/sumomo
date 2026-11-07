@@ -58,17 +58,36 @@ CORS ヘッダ、同一形式のエラーとステータスコード。
 
 ### 主なオプション
 
+ヘルプ(`sumomo --help`)は英語で表示されます。
+
 ```console
 $ sumomo --help
-  --listen string     待ち受けアドレス (default "127.0.0.1:5000")
-  --model string      GGUF モデルのパス (default "models/plamo-3-translate-0.8b-Q4_K_M.gguf")
-  --api-key string    API キーを要求する(空なら無認証)
-  --char-limit int    1 テキストあたりの文字数上限 (default 5000, <=0 で無制限)
-  --n-ctx int         llama-server のコンテキスト長 (default 4096)
-  --threads int       CPU スレッド数 (0 で自動)
-  --max-tokens int    生成トークン数の基本値(入力長に応じて自動拡張) (default 512)
-  --queue-depth int   同時リクエストの待ちキュー数上限 (default 32, 超過分は 503)
+  -api-key string
+    	require this API key for /translate and /detect (empty = open)
+  -char-limit int
+    	per-text character limit (<=0 = unlimited) (default 5000)
+  -listen string
+    	address to listen on (default "127.0.0.1:5000")
+  -llama-server-bin string
+    	path to llama-server (default: $LLAMA_SERVER_BIN or PATH)
+  -max-tokens int
+    	base generation limit; grows with input length (default 512)
+  -model string
+    	path to the GGUF model file (default "models/plamo-3-translate-0.8b-Q4_K_M.gguf")
+  -n-ctx int
+    	llama-server context window in tokens (default 4096)
+  -queue-depth int
+    	completions to queue while one runs; excess requests get 503 (default 32)
+  -request-timeout duration
+    	per-request translation timeout (default 10m0s)
+  -start-timeout duration
+    	llama-server startup timeout (default 5m0s)
+  -threads int
+    	CPU threads for llama-server (0 = auto)
 ```
+
+モデルファイルが存在しない場合、ファイル名が公式リリースのものと
+一致すれば Hugging Face から自動的にダウンロードします。
 
 ## Mastodon との連携
 
