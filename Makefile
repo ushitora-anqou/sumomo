@@ -1,4 +1,4 @@
-.PHONY: build build-image lint fmt test test-e2e release
+.PHONY: build build-image lint fmt test test-e2e bench release
 
 NIX ?= nix
 
@@ -29,6 +29,11 @@ test:
 ## backend and verify translation through Mastodon's API
 test-e2e:
 	bash scripts/e2e.sh
+
+## bench: measure sumomo's CPU and memory usage under translation load
+## (flags reach sumomo, e.g.: make bench SUMOMO_ARGS="--threads 4")
+bench: build
+	python scripts/bench.py $(SUMOMO_ARGS)
 
 ## release: tag VERSION (e.g. 0.1.0; a leading "v" is optional and
 ## added if missing), push the tag, and create a GitHub release.
