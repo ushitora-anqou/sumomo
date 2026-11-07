@@ -35,7 +35,10 @@ func main() {
 	flag.IntVar(&cfg.threads, "threads", 0, "CPU threads for llama-server (0 = auto)")
 	flag.IntVar(&cfg.maxTokens, "max-tokens", 512, "base generation limit; grows with input length")
 	flag.StringVar(&cfg.apiKey, "api-key", "", "require this API key for /translate and /detect (empty = open)")
-	flag.IntVar(&cfg.charLimit, "char-limit", 5000, "per-text character limit (<=0 = unlimited)")
+	// 1500 matches the longest text Mastodon submits for translation:
+	// media attachment descriptions (MediaAttachment::MAX_DESCRIPTION_LENGTH);
+	// post bodies are capped at 500 by StatusLengthValidator.
+	flag.IntVar(&cfg.charLimit, "char-limit", 1500, "per-text character limit (<=0 = unlimited)")
 	flag.IntVar(&cfg.queueDepth, "queue-depth", 32, "completions to queue while one runs; excess requests get 503")
 	flag.DurationVar(&cfg.requestTimeout, "request-timeout", 10*time.Minute, "per-request translation timeout")
 	flag.DurationVar(&cfg.startTimeout, "start-timeout", 5*time.Minute, "llama-server startup timeout")

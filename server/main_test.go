@@ -20,7 +20,7 @@ func testConfig() *config {
 	return &config{
 		maxTokens:      512,
 		nCtx:           4096,
-		charLimit:      5000,
+		charLimit:      1500,
 		requestTimeout: 10 * time.Second,
 	}
 }

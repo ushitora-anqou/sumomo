@@ -68,7 +68,7 @@ $ sumomo --help
   -api-key string
     	require this API key for /translate and /detect (empty = open)
   -char-limit int
-    	per-text character limit (<=0 = unlimited) (default 5000)
+    	per-text character limit (<=0 = unlimited) (default 1500)
   -listen string
     	address to listen on (default "127.0.0.1:5000")
   -llama-server-bin string
