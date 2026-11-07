@@ -75,6 +75,8 @@ $ sumomo --help
     	address to listen on (default "127.0.0.1:5000")
   -llama-server-bin string
     	path to llama-server (default: $LLAMA_SERVER_BIN or PATH)
+  -llama-server-extra value
+    	extra argument forwarded to llama-server (repeatable, e.g. --llama-server-extra=-fa)
   -max-tokens int
     	base generation limit; grows with input length (default 512)
   -model string

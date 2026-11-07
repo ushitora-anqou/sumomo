@@ -178,14 +178,14 @@ func llamaServerArgs(cfg *config, port int) []string {
 	if threads <= 0 {
 		threads = max(runtime.NumCPU()/2, 1)
 	}
-	return []string{
+	return append([]string{
 		"-m", cfg.modelPath,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(port),
 		"-c", strconv.Itoa(cfg.nCtx),
 		"-t", strconv.Itoa(threads),
 		"--no-webui",
-	}
+	}, cfg.llamaExtra...)
 }
 
 // logTail returns the last n lines of the llama-server log for diagnostics.

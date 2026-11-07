@@ -303,6 +303,13 @@ func TestLlamaServerArgs(t *testing.T) {
 	if !found {
 		t.Errorf("llamaServerArgs() with auto threads has no -t flag: %v", got)
 	}
+
+	// Extra arguments are appended verbatim for tuning experiments.
+	cfg.llamaExtra = []string{"-fa", "on"}
+	got = llamaServerArgs(cfg, 5123)
+	if got[len(got)-2] != "-fa" || got[len(got)-1] != "on" {
+		t.Errorf("llamaServerArgs() = %v, want extra args appended verbatim", got)
+	}
 }
 
 func TestFreePort(t *testing.T) {

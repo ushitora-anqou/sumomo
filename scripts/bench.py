@@ -114,6 +114,9 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=5999)
     parser.add_argument("--threads", type=int, default=None,
                         help="forward --threads N to sumomo (CPU threads for llama-server)")
+    parser.add_argument("--llama-extra", action="append", default=[],
+                        help="forward an extra argument to llama-server via sumomo "
+                             "(repeatable), e.g. --llama-extra=-fa")
     parser.add_argument("--sumomo-arg", action="append", default=[],
                         help="forward any other argument to sumomo (repeatable)")
     args = parser.parse_args()
@@ -130,6 +133,7 @@ def main() -> int:
     cmd = [BIN, "--listen", f"127.0.0.1:{port}", "--model", args.model]
     if args.threads is not None:
         cmd += ["--threads", str(args.threads)]
+    cmd += [f"--llama-server-extra={a}" for a in args.llama_extra]
     cmd += args.sumomo_arg
     print(f"[bench] starting: {' '.join(cmd)}", flush=True)
     server = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

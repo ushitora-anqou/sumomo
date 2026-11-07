@@ -24,6 +24,9 @@ type config struct {
 	queueDepth     int
 	requestTimeout time.Duration
 	startTimeout   time.Duration
+	// llamaExtra holds extra arguments forwarded verbatim to llama-server
+	// (--llama-server-extra), for tuning.
+	llamaExtra []string
 }
 
 func main() {
@@ -42,6 +45,8 @@ func main() {
 	flag.IntVar(&cfg.queueDepth, "queue-depth", 32, "completions to queue while one runs; excess requests get 503")
 	flag.DurationVar(&cfg.requestTimeout, "request-timeout", 10*time.Minute, "per-request translation timeout")
 	flag.DurationVar(&cfg.startTimeout, "start-timeout", 5*time.Minute, "llama-server startup timeout")
+	flag.Func("llama-server-extra", "extra argument forwarded to llama-server (repeatable, e.g. --llama-server-extra=-fa)",
+		func(s string) error { cfg.llamaExtra = append(cfg.llamaExtra, s); return nil })
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
