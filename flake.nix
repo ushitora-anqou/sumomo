@@ -36,18 +36,25 @@
           paths = [
             server
             p.llama-cpp
+            # CA roots so the server can auto-download the model from
+            # Hugging Face over HTTPS.
+            p.cacert
           ];
-          pathsToLink = [ "/bin" ];
+          pathsToLink = [ "/bin" "/etc/ssl/certs" ];
         };
-        # Writable /tmp for llama-server logs (non-root user).
+        # Writable /tmp for llama-server logs.
         extraCommands = ''
           mkdir -p tmp
           chmod 1777 tmp
         '';
         config = {
-          User = "65532";
+          # Run as root so the server can write the auto-downloaded model
+          # into bind-mounted directories (e.g. -v "$PWD/models:/models").
           Entrypoint = [ "/bin/sumomo" ];
-          Env = [ "LLAMA_SERVER_BIN=/bin/llama-server" ];
+          Env = [
+            "LLAMA_SERVER_BIN=/bin/llama-server"
+            "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+          ];
         };
       };
 
