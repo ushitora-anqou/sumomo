@@ -67,7 +67,9 @@ func freePort() (int, error) {
 }
 
 // startLlamaServer launches llama-server and waits until /health reports ok.
-func startLlamaServer(cfg *config) (*llamaServer, error) {
+// A missing model file is downloaded automatically when its name matches an
+// official release.
+func startLlamaServer(ctx context.Context, cfg *config) (*llamaServer, error) {
 	if cfg.queueDepth < 1 {
 		cfg.queueDepth = 32
 	}
@@ -81,8 +83,8 @@ func startLlamaServer(cfg *config) (*llamaServer, error) {
 			return nil, errors.New("llama-server not found: pass --llama-server-bin, set LLAMA_SERVER_BIN, or add it to PATH")
 		}
 	}
-	if _, err := os.Stat(cfg.modelPath); err != nil {
-		return nil, fmt.Errorf("model file not found: %s (run `nix run .#download-model` first)", cfg.modelPath)
+	if err := ensureModel(ctx, cfg.modelPath); err != nil {
+		return nil, err
 	}
 
 	port, err := freePort()

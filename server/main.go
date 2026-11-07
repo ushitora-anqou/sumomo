@@ -41,7 +41,10 @@ func main() {
 	flag.DurationVar(&cfg.startTimeout, "start-timeout", 5*time.Minute, "llama-server startup timeout")
 	flag.Parse()
 
-	llama, err := startLlamaServer(cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	llama, err := startLlamaServer(ctx, cfg)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -54,9 +57,6 @@ func main() {
 		Addr:    cfg.listen,
 		Handler: cors(s.routes()),
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpSrv.ListenAndServe() }()
