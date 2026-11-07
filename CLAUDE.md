@@ -65,5 +65,9 @@ deployment/Mastodon integration.
   flake (`ghcr.io/ushitora-anqou/sumomo`), so rename it there, not in the
   workflow.
 
+- Dependabot (`.github/dependabot.yml`): weekly combined updates for Go
+  modules, Actions workflows, and flake.lock — all ecosystems share one
+  multi-ecosystem group, so updates arrive as a single PR.
+
 The GGUF model is NOT baked into the image; mount the `models/` directory at
 `/models` and pass `--model /models/<file>.gguf`.

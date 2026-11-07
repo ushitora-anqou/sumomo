@@ -111,6 +111,10 @@ CI(GitHub Actions)のワークフローは次のとおりです。
   (各アーキテクチャを GitHub Actions のネイティブ runner でビルド。
   クロスコンパイルは不使用)
 
+依存関係の更新は Dependabot(`.github/dependabot.yml`)が行います。
+Go module・GitHub Actions ワークフロー・`flake.lock` を週次でチェックし、
+更新を 1 本の PR にまとめて通知します。
+
 ## リリース
 
 ```console

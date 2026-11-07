@@ -1,0 +1,25 @@
+# Dependabot: update Go modules, GitHub Actions workflows, and the Nix
+# flake.lock. Every ecosystem joins the "all" multi-ecosystem group so all
+# pending updates are combined into a single pull request per schedule run.
+version: 2
+
+multi-ecosystem-groups:
+  all:
+    schedule:
+      interval: "weekly"
+
+updates:
+  # server/go.mod
+  - package-ecosystem: "gomod"
+    directory: "/server"
+    multi-ecosystem-group: "all"
+
+  # .github/workflows/*.yml
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    multi-ecosystem-group: "all"
+
+  # flake.lock input pins
+  - package-ecosystem: "nix"
+    directory: "/"
+    multi-ecosystem-group: "all"

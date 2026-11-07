@@ -113,6 +113,10 @@ CI (GitHub Actions) workflows:
   `ghcr.io/ushitora-anqou/sumomo`; each architecture is built natively on
   its own GitHub Actions runner (arm64 runners; no cross-compilation)
 
+Dependencies are kept current by Dependabot (`.github/dependabot.yml`): Go
+modules, GitHub Actions workflows, and the Nix flake.lock are checked weekly
+and combined into a single update pull request.
+
 ## Release
 
 ```console
