@@ -20,10 +20,15 @@ $ nix run .#sumomo                  # start the server on http://127.0.0.1:5000
 Or with Docker (multi-arch image from GHCR):
 
 ```console
-$ docker run --rm -p 5000:5000 -v "$PWD/models:/models:ro" \
+$ docker run --rm -p 5000:5000 -v "$PWD/models:/models" \
     ghcr.io/ushitora-anqou/sumomo \
+    --listen "0.0.0.0:5000" \
     --model /models/plamo-3-translate-0.8b-Q4_K_M.gguf
 ```
+
+`--listen "0.0.0.0:5000"` is required so the server accepts connections
+from outside the container (the default binds to 127.0.0.1). A missing
+model file is downloaded into the mounted directory automatically.
 
 Example translation request:
 

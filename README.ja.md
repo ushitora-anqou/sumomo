@@ -20,10 +20,15 @@ $ nix run .#sumomo                  # http://127.0.0.1:5000 で起動
 Docker(GHCR のマルチアーキイメージ)でも動きます。
 
 ```console
-$ docker run --rm -p 5000:5000 -v "$PWD/models:/models:ro" \
+$ docker run --rm -p 5000:5000 -v "$PWD/models:/models" \
     ghcr.io/ushitora-anqou/sumomo \
+    --listen "0.0.0.0:5000" \
     --model /models/plamo-3-translate-0.8b-Q4_K_M.gguf
 ```
+
+`--listen "0.0.0.0:5000"` は必須です(デフォルトの 127.0.0.1 では
+コンテナ外からアクセスできません)。モデルファイルが無い場合は
+マウントしたディレクトリに自動的にダウンロードします。
 
 翻訳リクエストの例です。
 
