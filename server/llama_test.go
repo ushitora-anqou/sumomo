@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/openai/openai-go/v3"
 )
 
 func TestBuildSystemMessage(t *testing.T) {
@@ -29,10 +32,10 @@ func TestBuildSystemMessage(t *testing.T) {
 }
 
 func TestCompleteSuccess(t *testing.T) {
-	var sent chatRequest
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		sent = req
-		return http.StatusOK, chatCompletionResponse("  こんにちは  ")
+	var probe chatProbe
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		probe = p
+		return http.StatusOK, chatCompletionJSON("  こんにちは  ")
 	})
 	got, err := mock.complete(context.Background(), "Hello", "en", "ja", 0.0, 123)
 	if err != nil {
@@ -41,65 +44,58 @@ func TestCompleteSuccess(t *testing.T) {
 	if want := "こんにちは"; got != want {
 		t.Errorf("complete() = %q, want %q (output must be trimmed)", got, want)
 	}
-	if len(sent.Messages) != 2 {
-		t.Fatalf("request has %d messages, want 2 (system + user)", len(sent.Messages))
+	if probe.System != buildSystemMessage("en", "ja") {
+		t.Errorf("unexpected system message: %q", probe.System)
 	}
-	if sent.Messages[0].Role != "system" || sent.Messages[0].Content != buildSystemMessage("en", "ja") {
-		t.Errorf("unexpected system message: %+v", sent.Messages[0])
+	if probe.User != "Hello" {
+		t.Errorf("unexpected user message: %q", probe.User)
 	}
-	if sent.Messages[1].Role != "user" || sent.Messages[1].Content != "Hello" {
-		t.Errorf("unexpected user message: %+v", sent.Messages[1])
+	if probe.MaxTokens != 123 {
+		t.Errorf("MaxTokens = %d, want 123", probe.MaxTokens)
 	}
-	if sent.MaxTokens != 123 {
-		t.Errorf("MaxTokens = %d, want 123", sent.MaxTokens)
+	// Temperature 0 must be sent explicitly: llama-server would otherwise
+	// apply its own default and make translations non-deterministic.
+	if probe.Temperature == nil || *probe.Temperature != 0 {
+		t.Errorf("temperature = %v, want an explicit 0", probe.Temperature)
 	}
 }
 
 // TestCompleteForwardsTemperature verifies that the sampling temperature
 // travels through to llama-server (used for the alternatives feature).
 func TestCompleteForwardsTemperature(t *testing.T) {
-	var gotTemp float64
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		gotTemp = req.Temperature
-		return http.StatusOK, chatCompletionResponse("x")
+	var gotTemp *float64
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		gotTemp = p.Temperature
+		return http.StatusOK, chatCompletionJSON("x")
 	})
 	if _, err := mock.complete(context.Background(), "Hello", "en", "ja", 0.7, 64); err != nil {
 		t.Fatalf("complete() error: %v", err)
 	}
-	if gotTemp != 0.7 {
+	if gotTemp == nil || *gotTemp != 0.7 {
 		t.Errorf("temperature = %v, want 0.7", gotTemp)
 	}
 }
 
 func TestCompleteUpstreamError(t *testing.T) {
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		return http.StatusOK, map[string]any{
-			"error": map[string]any{"message": "model overloaded"},
-		}
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		return http.StatusServiceUnavailable, chatErrorJSON("model overloaded")
 	})
-	if _, err := mock.complete(context.Background(), "Hello", "en", "ja", 0, 64); err == nil {
+	_, err := mock.complete(context.Background(), "Hello", "en", "ja", 0, 64)
+	if err == nil {
 		t.Fatal("complete() succeeded, want an error for an upstream error body")
-	} else if !strings.Contains(err.Error(), "model overloaded") {
+	}
+	var apiErr *openai.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v, want *openai.Error", err)
+	}
+	if !strings.Contains(err.Error(), "model overloaded") {
 		t.Errorf("error = %v, want it to mention the upstream message", err)
 	}
 }
 
-func TestCompleteHTTPError(t *testing.T) {
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		return http.StatusInternalServerError, map[string]any{}
-	})
-	_, err := mock.complete(context.Background(), "Hello", "en", "ja", 0, 64)
-	if err == nil {
-		t.Fatal("complete() succeeded, want an error for a 500 response")
-	}
-	if !strings.Contains(err.Error(), "500") {
-		t.Errorf("error = %v, want it to mention the status code", err)
-	}
-}
-
 func TestCompleteNoChoices(t *testing.T) {
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		return http.StatusOK, map[string]any{"choices": []any{}}
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		return http.StatusOK, `{"choices":[]}`
 	})
 	if _, err := mock.complete(context.Background(), "Hello", "en", "ja", 0, 64); err == nil {
 		t.Fatal("complete() succeeded, want an error when no choices are returned")
@@ -107,8 +103,8 @@ func TestCompleteNoChoices(t *testing.T) {
 }
 
 func TestCompleteCancelledContext(t *testing.T) {
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		return http.StatusOK, chatCompletionResponse("x")
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		return http.StatusOK, chatCompletionJSON("x")
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -121,7 +117,7 @@ func TestCompleteCancelledContext(t *testing.T) {
 // strictly one at a time by the queue worker.
 func TestCompleteSerialized(t *testing.T) {
 	var running, maxRunning int32
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
 		n := atomic.AddInt32(&running, 1)
 		for {
 			m := atomic.LoadInt32(&maxRunning)
@@ -131,7 +127,7 @@ func TestCompleteSerialized(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 		atomic.AddInt32(&running, -1)
-		return http.StatusOK, chatCompletionResponse("ok")
+		return http.StatusOK, chatCompletionJSON("ok")
 	})
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -149,20 +145,6 @@ func TestCompleteSerialized(t *testing.T) {
 	}
 }
 
-// closeOnCleanup ensures block is closed exactly once, even when the test
-// fails before reaching its own close, so handlers blocked on it cannot
-// hang httptest.Server.Close during cleanup.
-func closeOnCleanup(t *testing.T, block chan struct{}) {
-	t.Helper()
-	t.Cleanup(func() {
-		select {
-		case <-block: // already closed
-		default:
-			close(block)
-		}
-	})
-}
-
 // TestCompleteQueueFullFailsFast verifies that a full pending queue rejects
 // the next completion immediately with the 503 errServerBusy.
 func TestCompleteQueueFullFailsFast(t *testing.T) {
@@ -170,10 +152,10 @@ func TestCompleteQueueFullFailsFast(t *testing.T) {
 	closeOnCleanup(t, block)
 	started := make(chan struct{})
 	var once sync.Once
-	mock := newMockLlamaWithQueue(t, 1, func(req chatRequest) (int, any) {
+	mock := newMockLlamaWithQueue(t, 1, func(p chatProbe) (int, string) {
 		once.Do(func() { close(started) })
 		<-block // the first job occupies the worker
-		return http.StatusOK, chatCompletionResponse("ok")
+		return http.StatusOK, chatCompletionJSON("ok")
 	})
 
 	// First job: picked up by the worker.
@@ -218,11 +200,11 @@ func TestCompleteSkipsCancelledJobs(t *testing.T) {
 	started := make(chan struct{})
 	var once sync.Once
 	var calls int32
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
 		once.Do(func() { close(started) })
 		<-block
 		atomic.AddInt32(&calls, 1)
-		return http.StatusOK, chatCompletionResponse("ok")
+		return http.StatusOK, chatCompletionJSON("ok")
 	})
 
 	// First job: occupies the worker.
@@ -253,6 +235,20 @@ func TestCompleteSkipsCancelledJobs(t *testing.T) {
 	if n := atomic.LoadInt32(&calls); n != 1 {
 		t.Errorf("model called %d time(s), want 1 (cancelled jobs must be skipped)", n)
 	}
+}
+
+// closeOnCleanup ensures block is closed exactly once, even when the test
+// fails before reaching its own close, so handlers blocked on it cannot
+// hang httptest.Server.Close during cleanup.
+func closeOnCleanup(t *testing.T, block chan struct{}) {
+	t.Helper()
+	t.Cleanup(func() {
+		select {
+		case <-block: // already closed
+		default:
+			close(block)
+		}
+	})
 }
 
 // waitForQueueLen blocks until the mock's pending queue holds want jobs.

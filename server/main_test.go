@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
 
 // testConfig returns a config with the same defaults as main, but with
@@ -21,17 +25,68 @@ func testConfig() *config {
 	}
 }
 
+// chatProbe is the flat view of a chat completion request that tests need:
+// the system/user messages plus the sampling parameters as seen on the
+// wire (Temperature is nil when the field was omitted).
+type chatProbe struct {
+	System      string
+	User        string
+	Temperature *float64
+	MaxTokens   int64
+}
+
+// probeRequest decodes an OpenAI-compatible chat completion request body.
+func probeRequest(body []byte) (chatProbe, error) {
+	var raw struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+		Temperature *float64 `json:"temperature"`
+		MaxTokens   int64    `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return chatProbe{}, err
+	}
+	var p chatProbe
+	for _, m := range raw.Messages {
+		var content string
+		if err := json.Unmarshal(m.Content, &content); err != nil {
+			return chatProbe{}, err
+		}
+		switch m.Role {
+		case "system":
+			p.System = content
+		case "user":
+			p.User = content
+		}
+	}
+	p.Temperature = raw.Temperature
+	p.MaxTokens = raw.MaxTokens
+	return p, nil
+}
+
+// chatCompletionJSON builds an OpenAI-style chat completion response body.
+func chatCompletionJSON(content string) string {
+	return fmt.Sprintf(`{"choices":[{"message":{"role":"assistant","content":%q},"finish_reason":"stop"}]}`, content)
+}
+
+// chatErrorJSON builds an OpenAI-style error response body.
+func chatErrorJSON(message string) string {
+	return fmt.Sprintf(`{"error":{"code":null,"message":%q,"param":null,"type":null}}`, message)
+}
+
 // newMockLlama returns a llamaServer whose /v1/chat/completions endpoint is
-// served in-process: each request is decoded as a chatRequest, passed to
-// respond, and the returned status/body is sent back as JSON.
-func newMockLlama(t *testing.T, respond func(req chatRequest) (int, any)) *llamaServer {
+// served in-process: each request is probed and passed to respond, whose
+// (status, JSON body) result is sent back verbatim.
+func newMockLlama(t *testing.T, respond func(p chatProbe) (int, string)) *llamaServer {
 	t.Helper()
 	return newMockLlamaWithQueue(t, 32, respond)
 }
 
 // newMockLlamaWithQueue is newMockLlama with an explicit pending-job queue
 // depth, for testing back-pressure behavior.
-func newMockLlamaWithQueue(t *testing.T, queueDepth int, respond func(req chatRequest) (int, any)) *llamaServer {
+func newMockLlamaWithQueue(t *testing.T, queueDepth int, respond func(p chatProbe) (int, string)) *llamaServer {
 	t.Helper()
 	if queueDepth < 1 {
 		queueDepth = 1
@@ -46,39 +101,30 @@ func newMockLlamaWithQueue(t *testing.T, queueDepth int, respond func(req chatRe
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		var req chatRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		p, err := probeRequest(body)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		status, respBody := respond(req)
+		status, respBody := respond(p)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(respBody)
+		_, _ = io.WriteString(w, respBody)
 	}))
 	t.Cleanup(upstream.Close)
 	ls := &llamaServer{
+		ai:      openai.NewClient(option.WithBaseURL(upstream.URL + "/v1")),
+		http:    upstream.Client(),
 		baseURL: upstream.URL,
-		client:  upstream.Client(),
 		jobs:    make(chan *completionJob, queueDepth),
 	}
 	go ls.work()
 	return ls
 }
 
-// chatCompletionResponse builds an OpenAI-style chat completion body.
-func chatCompletionResponse(content string) map[string]any {
-	return map[string]any{
-		"choices": []any{map[string]any{
-			"message":       map[string]any{"role": "assistant", "content": content},
-			"finish_reason": "stop",
-		}},
-	}
-}
-
 // newTestServer builds a sumomo server backed by a mock llama-server and
 // serves it (with CORS, like main) on an httptest listener.
-func newTestServer(t *testing.T, cfg *config, respond func(req chatRequest) (int, any)) *httptest.Server {
+func newTestServer(t *testing.T, cfg *config, respond func(p chatProbe) (int, string)) *httptest.Server {
 	t.Helper()
 	if cfg == nil {
 		cfg = testConfig()

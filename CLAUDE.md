@@ -9,8 +9,22 @@ endpoints (`POST /translate`, `GET /languages`, `POST /detect`,
 `GET /frontend/settings`, `GET /health`). API only — there is no HTML UI.
 
 Everything runs through Nix (`flake.nix`): the dev shell provides Go,
-golangci-lint, llama.cpp, and Python. The Go server has no external
-dependencies (stdlib only).
+golangci-lint, llama.cpp, and Python.
+
+## Dependencies
+
+Prefer a well-known, actively maintained Go library over a hand-rolled
+implementation whenever one exists — apply this rule proactively, not
+just when rewriting. Current examples: `golang.org/x/net/html` for HTML
+tokenizing and `github.com/openai/openai-go/v3` (official SDK) as the
+llama-server client. Known rejection: `pemistahl/lingua-go` for language
+detection (its embedded models would add ~125 MB to the binary for a
+field the translation model auto-detects anyway).
+
+When adding a dependency: update `go.mod`/`go.sum`, then update
+`vendorHash` in `flake.nix` (a dummy hash makes `nix build` report the
+right one), and note that nix only sees git-staged files — `git add`
+before building with nix.
 
 ## Commands
 
@@ -36,17 +50,20 @@ deployment/Mastodon integration.
 
 ## Layout
 
-- `server/` — the Go server (one package, stdlib only)
+- `server/` — the Go server (one package; uses openai-go and x/net/html)
   - `main.go` — flags, llama-server startup, signal handling
   - `api.go` — LibreTranslate API handlers, routing (`server.routes()`), CORS
-  - `llama.go` — llama-server child process management + OpenAI-compatible
+  - `llama.go` — llama-server child process management + the OpenAI SDK
     client; completions go through a bounded FIFO queue (`--queue-depth`)
     drained by a single worker (strictly sequential; a full queue fails fast
     with 503, cancelled waiters are skipped)
+  - `download.go` — auto-download of a missing official GGUF model
+    (`.part` resume, retries, HF_TOKEN)
   - `languages.go` — language tables; maps LibreTranslate codes (`zh`/`zt`)
     to the model's (`zh-hans`/`zh-hant`)
   - `detect.go` — Unicode-script-based language detection
-  - `html.go` — `format=html` translation (tags preserved, entities round-tripped)
+  - `html.go` — `format=html` translation via the x/net/html tokenizer
+    (tags preserved, entities round-tripped)
   - `*_test.go` — unit tests; the mock llama-server helpers live in `main_test.go`
 - `scripts/` — `download_model.py` (GGUF downloader), `translate.py` (one-shot
   CLI), `e2e.sh` (E2E test; run via `make test-e2e`)

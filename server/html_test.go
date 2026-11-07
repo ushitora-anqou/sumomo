@@ -7,53 +7,6 @@ import (
 	"testing"
 )
 
-func TestTokenizeHTML(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want []htmlToken
-	}{
-		{
-			"tags and text",
-			"<p>Hello</p>",
-			[]htmlToken{{raw: "<p>", isTag: true}, {raw: "Hello"}, {raw: "</p>", isTag: true}},
-		},
-		{
-			"text only",
-			"Hello &amp; bye",
-			[]htmlToken{{raw: "Hello &amp; bye"}},
-		},
-		{
-			"self-closing tag",
-			"a<br />b",
-			[]htmlToken{{raw: "a"}, {raw: "<br />", isTag: true}, {raw: "b"}},
-		},
-		{
-			"empty",
-			"",
-			nil,
-		},
-		{
-			"unterminated tag becomes text",
-			"a < b",
-			[]htmlToken{{raw: "a "}, {raw: "< b"}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tokenizeHTML(tt.in)
-			if len(got) != len(tt.want) {
-				t.Fatalf("tokenizeHTML(%q) = %v, want %v", tt.in, got, tt.want)
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("tokenizeHTML(%q)[%d] = %+v, want %+v", tt.in, i, got[i], tt.want[i])
-				}
-			}
-		})
-	}
-}
-
 func TestHTMLHasTranslatableText(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -64,6 +17,7 @@ func TestHTMLHasTranslatableText(t *testing.T) {
 		{"<br/><hr/>", false},
 		{"&amp;", false},
 		{"", false},
+		{"a &lt; b", true},
 	}
 	for _, tt := range tests {
 		if got := htmlHasTranslatableText(tt.in); got != tt.want {
@@ -74,10 +28,9 @@ func TestHTMLHasTranslatableText(t *testing.T) {
 
 func TestTranslateHTML(t *testing.T) {
 	var translated []string
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		text := req.Messages[len(req.Messages)-1].Content
-		translated = append(translated, text)
-		return http.StatusOK, chatCompletionResponse("「" + text + "」")
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		translated = append(translated, p.User)
+		return http.StatusOK, chatCompletionJSON("「" + p.User + "」")
 	})
 	s := &server{cfg: testConfig(), llama: mock}
 
@@ -99,11 +52,29 @@ func TestTranslateHTML(t *testing.T) {
 	}
 }
 
+func TestTranslateHTMLKeepsMarkupVerbatim(t *testing.T) {
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		return http.StatusOK, chatCompletionJSON("「" + p.User + "」")
+	})
+	s := &server{cfg: testConfig(), llama: mock}
+
+	// Attributes and self-closing tags must survive untouched; the
+	// unterminated "<" is plain text (a text run), and digits-only runs
+	// pass through without a model call.
+	in := `<a href="https://example.com/x?a=1&amp;b=2" class="x">Link</a> a < b <br/> 42`
+	out, err := s.translateHTML(context.Background(), in, "en", "ja")
+	if err != nil {
+		t.Fatalf("translateHTML() error: %v", err)
+	}
+	want := `<a href="https://example.com/x?a=1&amp;b=2" class="x">「Link」</a>「 a &lt; b 」<br/> 42`
+	if out != want {
+		t.Errorf("translateHTML() =\n %q\nwant\n %q", out, want)
+	}
+}
+
 func TestTranslateHTMLUpstreamError(t *testing.T) {
-	mock := newMockLlama(t, func(req chatRequest) (int, any) {
-		return http.StatusOK, map[string]any{
-			"error": map[string]any{"message": "boom"},
-		}
+	mock := newMockLlama(t, func(p chatProbe) (int, string) {
+		return http.StatusServiceUnavailable, chatErrorJSON("boom")
 	})
 	s := &server{cfg: testConfig(), llama: mock}
 	if _, err := s.translateHTML(context.Background(), "<p>Hello</p>", "en", "ja"); err == nil {

@@ -144,10 +144,9 @@ func TestMaxTokensFor(t *testing.T) {
 // --- endpoints (through the real routing table) ----------------------------
 
 // echoTranslate is a mock llama-server translating to "<target>: <text>".
-func echoTranslate(req chatRequest) (int, any) {
-	sys := req.Messages[0].Content
-	target := strings.TrimSuffix(strings.Split(sys, "target_lang=")[1], "\n---")
-	return http.StatusOK, chatCompletionResponse(target + ": " + req.Messages[1].Content)
+func echoTranslate(p chatProbe) (int, string) {
+	target := strings.TrimSuffix(strings.Split(p.System, "target_lang=")[1], "\n---")
+	return http.StatusOK, chatCompletionJSON(target + ": " + p.User)
 }
 
 func TestTranslateSingle(t *testing.T) {
@@ -191,9 +190,9 @@ func TestTranslateAutoDetectsLanguage(t *testing.T) {
 
 func TestTranslateAutoDetectInRequest(t *testing.T) {
 	var sys string
-	ts := newTestServer(t, nil, func(req chatRequest) (int, any) {
-		sys = req.Messages[0].Content
-		return echoTranslate(req)
+	ts := newTestServer(t, nil, func(p chatProbe) (int, string) {
+		sys = p.System
+		return echoTranslate(p)
 	})
 	postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"auto","target":"ja"}`)
@@ -203,11 +202,11 @@ func TestTranslateAutoDetectInRequest(t *testing.T) {
 }
 
 func TestTranslateAlternatives(t *testing.T) {
-	ts := newTestServer(t, nil, func(req chatRequest) (int, any) {
-		if req.Temperature == 0 {
-			return http.StatusOK, chatCompletionResponse("primary")
+	ts := newTestServer(t, nil, func(p chatProbe) (int, string) {
+		if p.Temperature != nil && *p.Temperature == 0 {
+			return http.StatusOK, chatCompletionJSON("primary")
 		}
-		return http.StatusOK, chatCompletionResponse("alt")
+		return http.StatusOK, chatCompletionJSON("alt")
 	})
 	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"en","target":"ja","alternatives":2}`)
@@ -232,9 +231,9 @@ func TestTranslateHTMLFormat(t *testing.T) {
 
 func TestTranslatePassthroughNonTranslatable(t *testing.T) {
 	called := false
-	ts := newTestServer(t, nil, func(req chatRequest) (int, any) {
+	ts := newTestServer(t, nil, func(p chatProbe) (int, string) {
 		called = true
-		return echoTranslate(req)
+		return echoTranslate(p)
 	})
 	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"123-456","source":"en","target":"ja"}`)
@@ -259,8 +258,8 @@ func TestTranslateFormEncoded(t *testing.T) {
 }
 
 func TestTranslateUpstreamFailure(t *testing.T) {
-	ts := newTestServer(t, nil, func(req chatRequest) (int, any) {
-		return http.StatusOK, map[string]any{"error": map[string]any{"message": "boom"}}
+	ts := newTestServer(t, nil, func(p chatProbe) (int, string) {
+		return http.StatusInternalServerError, chatErrorJSON("boom")
 	})
 	status, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"Hello","source":"en","target":"ja"}`)
@@ -279,10 +278,10 @@ func TestTranslateQueueFullReturns503(t *testing.T) {
 	closeOnCleanup(t, block)
 	started := make(chan struct{})
 	var once sync.Once
-	mock := newMockLlamaWithQueue(t, 1, func(req chatRequest) (int, any) {
+	mock := newMockLlamaWithQueue(t, 1, func(p chatProbe) (int, string) {
 		once.Do(func() { close(started) })
 		<-block // the first request occupies the worker
-		return http.StatusOK, chatCompletionResponse("ja: " + req.Messages[1].Content)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
 	})
 	s := &server{cfg: testConfig(), llama: mock}
 	ts := httptest.NewServer(cors(s.routes()))

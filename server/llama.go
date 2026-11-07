@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +14,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 )
+
+// plamoModel is the model identifier understood by llama-server.
+const plamoModel = "plamo-3-translate-0.8b"
 
 // llamaServer manages a llama-server child process that hosts the
 // plamo-3-translate GGUF model and answers OpenAI-compatible
@@ -23,8 +29,11 @@ import (
 // kept resident; the chat template embedded in the official GGUF converts
 // the [plamo-translate] system block into the PFML3 prompt.
 type llamaServer struct {
+	// ai talks to llama-server's OpenAI-compatible API (official SDK).
+	ai openai.Client
+	// http is a plain client for the /health probe.
+	http    *http.Client
 	baseURL string
-	client  *http.Client
 	cmd     *exec.Cmd
 	logPath string
 	// jobs feeds a single worker goroutine that runs completions strictly
@@ -38,7 +47,7 @@ type llamaServer struct {
 // completionJob is one translation request waiting for the worker.
 type completionJob struct {
 	ctx context.Context
-	req chatRequest
+	req openai.ChatCompletionNewParams
 	// done receives exactly one result; it is buffered so the worker never
 	// blocks on a caller that went away.
 	done chan completionResult
@@ -116,8 +125,9 @@ func startLlamaServer(ctx context.Context, cfg *config) (*llamaServer, error) {
 	}
 
 	ls := &llamaServer{
+		ai:      openai.NewClient(option.WithBaseURL(fmt.Sprintf("http://127.0.0.1:%d/v1", port))),
+		http:    &http.Client{},
 		baseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
-		client:  &http.Client{},
 		cmd:     cmd,
 		logPath: logFile.Name(),
 		jobs:    make(chan *completionJob, cfg.queueDepth),
@@ -130,7 +140,7 @@ func startLlamaServer(ctx context.Context, cfg *config) (*llamaServer, error) {
 			ls.stop()
 			return nil, fmt.Errorf("llama-server exited early (code %d):\n%s", cmd.ProcessState.ExitCode(), logTail(ls.logPath, 15))
 		}
-		resp, err := ls.client.Get(ls.baseURL + "/health")
+		resp, err := ls.http.Get(ls.baseURL + "/health")
 		if err == nil {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			_ = resp.Body.Close()
@@ -179,31 +189,6 @@ func logTail(path string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
-	Stop        []string      `json:"stop"`
-}
-
-type chatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
 // buildSystemMessage renders the [plamo-translate] settings block that the
 // chat template embedded in the official GGUF understands.
 func buildSystemMessage(sourcePlamo, targetPlamo string) string {
@@ -243,15 +228,19 @@ func (l *llamaServer) complete(ctx context.Context, text, sourcePlamo, targetPla
 	}
 	job := &completionJob{
 		ctx: ctx,
-		req: chatRequest{
-			Model: "plamo-3-translate-0.8b",
-			Messages: []chatMessage{
-				{Role: "system", Content: buildSystemMessage(sourcePlamo, targetPlamo)},
-				{Role: "user", Content: text},
+		// Temperature is sent explicitly (param.NewOpt) so llama-server
+		// never applies its own default: primary translations run at 0.
+		req: openai.ChatCompletionNewParams{
+			Model: plamoModel,
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.SystemMessage(buildSystemMessage(sourcePlamo, targetPlamo)),
+				openai.UserMessage(text),
 			},
-			Temperature: temperature,
-			MaxTokens:   maxTokens,
-			Stop:        []string{"<|plamo:tag|>", "<|plamo:bos|>"},
+			Temperature: param.NewOpt(temperature),
+			MaxTokens:   param.NewOpt(int64(maxTokens)),
+			Stop: openai.ChatCompletionNewParamsStopUnion{
+				OfStringArray: []string{"<|plamo:tag|>", "<|plamo:bos|>"},
+			},
 		},
 		done: make(chan completionResult, 1),
 	}
@@ -270,38 +259,17 @@ func (l *llamaServer) complete(ctx context.Context, text, sourcePlamo, targetPla
 
 // requestCompletion sends one chat completion to llama-server and returns
 // the generated text.
-func (l *llamaServer) requestCompletion(ctx context.Context, reqBody chatRequest) (string, error) {
-	payload, err := json.Marshal(reqBody)
+func (l *llamaServer) requestCompletion(ctx context.Context, params openai.ChatCompletionNewParams) (string, error) {
+	completion, err := l.ai.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/v1/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := l.client.Do(req)
-	if err != nil {
+		var apiErr *openai.Error
+		if errors.As(err, &apiErr) {
+			return "", fmt.Errorf("llama-server error (status %d): %s: %w", apiErr.StatusCode, apiErr.Message, apiErr)
+		}
 		return "", fmt.Errorf("llama-server request failed: %v\n%s", err, logTail(l.logPath, 10))
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err != nil {
-		return "", err
-	}
-	var cr chatResponse
-	if err := json.Unmarshal(body, &cr); err != nil {
-		return "", fmt.Errorf("invalid response from llama-server: %v", err)
-	}
-	if cr.Error != nil {
-		return "", fmt.Errorf("llama-server error: %s", cr.Error.Message)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llama-server returned %d: %s", resp.StatusCode, string(body))
-	}
-	if len(cr.Choices) == 0 {
+	if len(completion.Choices) == 0 {
 		return "", errors.New("llama-server returned no choices")
 	}
-	return strings.TrimSpace(cr.Choices[0].Message.Content), nil
+	return strings.TrimSpace(completion.Choices[0].Message.Content), nil
 }
