@@ -1,6 +1,8 @@
 # Dependabot: update Go modules, GitHub Actions workflows, and the Nix
 # flake.lock. Every ecosystem joins the "all" multi-ecosystem group so all
 # pending updates are combined into a single pull request per schedule run.
+# patterns is required for entries in a multi-ecosystem group; "*" includes
+# every dependency.
 version: 2
 
 multi-ecosystem-groups:
@@ -13,13 +15,16 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/server"
     multi-ecosystem-group: "all"
+    patterns: ["*"]
 
   # .github/workflows/*.yml
   - package-ecosystem: "github-actions"
     directory: "/"
     multi-ecosystem-group: "all"
+    patterns: ["*"]
 
   # flake.lock input pins
   - package-ecosystem: "nix"
     directory: "/"
     multi-ecosystem-group: "all"
+    patterns: ["*"]
