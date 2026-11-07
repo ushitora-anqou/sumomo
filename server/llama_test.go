@@ -8,7 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestBuildSystemMessage(t *testing.T) {
@@ -111,6 +114,156 @@ func TestCompleteCancelledContext(t *testing.T) {
 	cancel()
 	if _, err := mock.complete(ctx, "Hello", "en", "ja", 0, 64); err == nil {
 		t.Fatal("complete() succeeded, want an error for a cancelled context")
+	}
+}
+
+// TestCompleteSerialized verifies that concurrent completions are executed
+// strictly one at a time by the queue worker.
+func TestCompleteSerialized(t *testing.T) {
+	var running, maxRunning int32
+	mock := newMockLlama(t, func(req chatRequest) (int, any) {
+		n := atomic.AddInt32(&running, 1)
+		for {
+			m := atomic.LoadInt32(&maxRunning)
+			if n <= m || atomic.CompareAndSwapInt32(&maxRunning, m, n) {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+		atomic.AddInt32(&running, -1)
+		return http.StatusOK, chatCompletionResponse("ok")
+	})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := mock.complete(context.Background(), "Hello", "en", "ja", 0, 8); err != nil {
+				t.Errorf("complete() error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := atomic.LoadInt32(&maxRunning); got != 1 {
+		t.Errorf("max concurrent completions = %d, want 1", got)
+	}
+}
+
+// closeOnCleanup ensures block is closed exactly once, even when the test
+// fails before reaching its own close, so handlers blocked on it cannot
+// hang httptest.Server.Close during cleanup.
+func closeOnCleanup(t *testing.T, block chan struct{}) {
+	t.Helper()
+	t.Cleanup(func() {
+		select {
+		case <-block: // already closed
+		default:
+			close(block)
+		}
+	})
+}
+
+// TestCompleteQueueFullFailsFast verifies that a full pending queue rejects
+// the next completion immediately with the 503 errServerBusy.
+func TestCompleteQueueFullFailsFast(t *testing.T) {
+	block := make(chan struct{})
+	closeOnCleanup(t, block)
+	started := make(chan struct{})
+	var once sync.Once
+	mock := newMockLlamaWithQueue(t, 1, func(req chatRequest) (int, any) {
+		once.Do(func() { close(started) })
+		<-block // the first job occupies the worker
+		return http.StatusOK, chatCompletionResponse("ok")
+	})
+
+	// First job: picked up by the worker.
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := mock.complete(context.Background(), "first", "en", "ja", 0, 8)
+		firstDone <- err
+	}()
+	<-started
+	// Second job: fills the queue (depth 1).
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := mock.complete(context.Background(), "second", "en", "ja", 0, 8)
+		secondDone <- err
+	}()
+	waitForQueueLen(t, mock, 1)
+
+	// Third job: the queue is full, so it must fail fast with 503.
+	_, err := mock.complete(context.Background(), "third", "en", "ja", 0, 8)
+	var ae *apiError
+	if !asAPIError(err, &ae) {
+		t.Fatalf("error = %v, want errServerBusy", err)
+	}
+	if ae.status != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", ae.status)
+	}
+
+	close(block)
+	if err := <-firstDone; err != nil {
+		t.Errorf("first complete() error: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Errorf("second complete() error: %v", err)
+	}
+}
+
+// TestCompleteSkipsCancelledJobs verifies that jobs whose client goes away
+// while queued are dropped without hitting the model.
+func TestCompleteSkipsCancelledJobs(t *testing.T) {
+	block := make(chan struct{})
+	closeOnCleanup(t, block)
+	started := make(chan struct{})
+	var once sync.Once
+	var calls int32
+	mock := newMockLlama(t, func(req chatRequest) (int, any) {
+		once.Do(func() { close(started) })
+		<-block
+		atomic.AddInt32(&calls, 1)
+		return http.StatusOK, chatCompletionResponse("ok")
+	})
+
+	// First job: occupies the worker.
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := mock.complete(context.Background(), "first", "en", "ja", 0, 8)
+		firstDone <- err
+	}()
+	<-started
+	// Queue a live job, then cancel it while it waits.
+	deadCtx, cancel := context.WithCancel(context.Background())
+	deadDone := make(chan error, 1)
+	go func() {
+		_, err := mock.complete(deadCtx, "dead", "en", "ja", 0, 8)
+		deadDone <- err
+	}()
+	waitForQueueLen(t, mock, 1)
+	cancel()
+
+	close(block)
+	if err := <-firstDone; err != nil {
+		t.Errorf("first complete() error: %v", err)
+	}
+	if err := <-deadDone; err == nil {
+		t.Error("cancelled complete() succeeded, want a context error")
+	}
+	// Only the first job reached the model.
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Errorf("model called %d time(s), want 1 (cancelled jobs must be skipped)", n)
+	}
+}
+
+// waitForQueueLen blocks until the mock's pending queue holds want jobs.
+func waitForQueueLen(t *testing.T, mock *llamaServer, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(mock.jobs) < want {
+		if time.Now().After(deadline) {
+			t.Fatalf("queue length %d, want %d (timed out)", len(mock.jobs), want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

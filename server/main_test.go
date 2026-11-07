@@ -26,6 +26,16 @@ func testConfig() *config {
 // respond, and the returned status/body is sent back as JSON.
 func newMockLlama(t *testing.T, respond func(req chatRequest) (int, any)) *llamaServer {
 	t.Helper()
+	return newMockLlamaWithQueue(t, 32, respond)
+}
+
+// newMockLlamaWithQueue is newMockLlama with an explicit pending-job queue
+// depth, for testing back-pressure behavior.
+func newMockLlamaWithQueue(t *testing.T, queueDepth int, respond func(req chatRequest) (int, any)) *llamaServer {
+	t.Helper()
+	if queueDepth < 1 {
+		queueDepth = 1
+	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
@@ -47,11 +57,13 @@ func newMockLlama(t *testing.T, respond func(req chatRequest) (int, any)) *llama
 		_ = json.NewEncoder(w).Encode(respBody)
 	}))
 	t.Cleanup(upstream.Close)
-	return &llamaServer{
+	ls := &llamaServer{
 		baseURL: upstream.URL,
 		client:  upstream.Client(),
-		sem:     make(chan struct{}, 1),
+		jobs:    make(chan *completionJob, queueDepth),
 	}
+	go ls.work()
+	return ls
 }
 
 // chatCompletionResponse builds an OpenAI-style chat completion body.

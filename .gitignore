@@ -36,3 +36,4 @@ models/
 
 # make build output
 bin/
+server/sumomo

@@ -21,6 +21,7 @@ type config struct {
 	maxTokens      int
 	apiKey         string
 	charLimit      int
+	queueDepth     int
 	requestTimeout time.Duration
 	startTimeout   time.Duration
 }
@@ -35,6 +36,7 @@ func main() {
 	flag.IntVar(&cfg.maxTokens, "max-tokens", 512, "base generation limit; grows with input length")
 	flag.StringVar(&cfg.apiKey, "api-key", "", "require this API key for /translate and /detect (empty = open)")
 	flag.IntVar(&cfg.charLimit, "char-limit", 5000, "per-text character limit (<=0 = unlimited)")
+	flag.IntVar(&cfg.queueDepth, "queue-depth", 32, "completions to queue while one runs; excess requests get 503")
 	flag.DurationVar(&cfg.requestTimeout, "request-timeout", 10*time.Minute, "per-request translation timeout")
 	flag.DurationVar(&cfg.startTimeout, "start-timeout", 5*time.Minute, "llama-server startup timeout")
 	flag.Parse()
@@ -44,7 +46,7 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 	defer llama.stop()
-	log.Printf("llama-server ready (model=%s)", cfg.modelPath)
+	log.Printf("llama-server ready (model=%s, queue-depth=%d)", cfg.modelPath, cfg.queueDepth)
 
 	s := &server{cfg: cfg, llama: llama}
 

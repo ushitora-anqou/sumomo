@@ -2,10 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // --- parseTranslateRequest -------------------------------------------------
@@ -266,6 +270,62 @@ func TestTranslateUpstreamFailure(t *testing.T) {
 	if msg, _ := body["error"].(string); !strings.Contains(msg, "Cannot translate text") {
 		t.Errorf("error = %v, want it to wrap the failure", body["error"])
 	}
+}
+
+// With one job running and a queue depth of 1, the third concurrent
+// request must fail fast with 503 instead of queueing.
+func TestTranslateQueueFullReturns503(t *testing.T) {
+	block := make(chan struct{})
+	closeOnCleanup(t, block)
+	started := make(chan struct{})
+	var once sync.Once
+	mock := newMockLlamaWithQueue(t, 1, func(req chatRequest) (int, any) {
+		once.Do(func() { close(started) })
+		<-block // the first request occupies the worker
+		return http.StatusOK, chatCompletionResponse("ja: " + req.Messages[1].Content)
+	})
+	s := &server{cfg: testConfig(), llama: mock}
+	ts := httptest.NewServer(cors(s.routes()))
+	t.Cleanup(ts.Close)
+
+	// postInBackground issues a translate request and fully drains the
+	// response so the test server can shut down cleanly.
+	var bg sync.WaitGroup
+	postInBackground := func(q string) {
+		bg.Add(1)
+		go func() {
+			defer bg.Done()
+			resp, err := http.Post(ts.URL+"/translate", "application/json",
+				strings.NewReader(`{"q":"`+q+`","source":"en","target":"ja"}`))
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}()
+	}
+
+	postInBackground("first")
+	<-started
+	postInBackground("second")
+	deadline := time.Now().Add(5 * time.Second)
+	for len(mock.jobs) < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(mock.jobs) < 1 {
+		t.Fatal("second request never queued")
+	}
+
+	status, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"third","source":"en","target":"ja"}`)
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when the queue is full", status)
+	}
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "busy") {
+		t.Errorf("error = %q, want a busy message", msg)
+	}
+	close(block)
+	bg.Wait()
 }
 
 func TestTranslateValidationErrors(t *testing.T) {

@@ -35,6 +35,18 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// writeTranslateError maps a translation failure to a LibreTranslate-style
+// error response, preserving the status of apiError values (e.g. 503 when
+// the completion queue is full).
+func writeTranslateError(w http.ResponseWriter, err error) {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		writeError(w, ae.status, ae.msg)
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "Cannot translate text: "+err.Error())
+}
+
 // cors mimics LibreTranslate's CORS middleware.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +288,7 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	for i, text := range req.texts {
 		out, translated, err := translateOne(text)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Cannot translate text: "+err.Error())
+			writeTranslateError(w, err)
 			return
 		}
 		results[i] = out

@@ -37,7 +37,10 @@ deployment/Mastodon integration.
 - `server/` — the Go server (one package, stdlib only)
   - `main.go` — flags, llama-server startup, signal handling
   - `api.go` — LibreTranslate API handlers, routing (`server.routes()`), CORS
-  - `llama.go` — llama-server child process management + OpenAI-compatible client
+  - `llama.go` — llama-server child process management + OpenAI-compatible
+    client; completions go through a bounded FIFO queue (`--queue-depth`)
+    drained by a single worker (strictly sequential; a full queue fails fast
+    with 503, cancelled waiters are skipped)
   - `languages.go` — language tables; maps LibreTranslate codes (`zh`/`zt`)
     to the model's (`zh-hans`/`zh-hant`)
   - `detect.go` — Unicode-script-based language detection

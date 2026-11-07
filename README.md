@@ -51,6 +51,11 @@ made only of digits and symbols, form-encoded requests, CORS headers, and
 identical error bodies and status codes. The language codes `zh` (Simplified)
 and `zt` (Traditional) are mapped to the model's `zh-hans` / `zh-hant`.
 
+Translations run strictly one at a time on the resident model: concurrent
+requests are queued (bounded FIFO, `--queue-depth`) and processed
+sequentially, which keeps resource usage flat under load; once the queue is
+full, further requests fail fast with 503 instead of piling up.
+
 ### Options
 
 The current CLI help is printed in Japanese:
@@ -64,6 +69,7 @@ $ sumomo --help
   --n-ctx int         llama-server のコンテキスト長 (default 4096)
   --threads int       CPU スレッド数 (0 で自動)
   --max-tokens int    生成トークン数の基本値(入力長に応じて自動拡張) (default 512)
+  --queue-depth int   同時リクエストの待ちキュー数上限 (default 32, 超過分は 503)
 ```
 
 ## Mastodon integration

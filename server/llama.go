@@ -27,9 +27,34 @@ type llamaServer struct {
 	client  *http.Client
 	cmd     *exec.Cmd
 	logPath string
-	// sem serializes completion requests: llama-server runs with a single
-	// slot, so concurrent requests would be rejected while one is running.
-	sem chan struct{}
+	// jobs feeds a single worker goroutine that runs completions strictly
+	// one at a time (llama-server has a single model slot). The channel is
+	// a bounded FIFO queue: requests that arrive while it is full fail
+	// fast with 503 instead of piling up, which keeps concurrent load from
+	// consuming unbounded server resources.
+	jobs chan *completionJob
+}
+
+// completionJob is one translation request waiting for the worker.
+type completionJob struct {
+	ctx context.Context
+	req chatRequest
+	// done receives exactly one result; it is buffered so the worker never
+	// blocks on a caller that went away.
+	done chan completionResult
+}
+
+type completionResult struct {
+	content string
+	err     error
+}
+
+// errServerBusy is returned when the pending-work queue is full. It maps
+// to HTTP 503 so clients retry later instead of the server accumulating
+// waiters.
+var errServerBusy = &apiError{
+	status: http.StatusServiceUnavailable,
+	msg:    "Translation server is busy, please try again later",
 }
 
 func freePort() (int, error) {
@@ -43,6 +68,9 @@ func freePort() (int, error) {
 
 // startLlamaServer launches llama-server and waits until /health reports ok.
 func startLlamaServer(cfg *config) (*llamaServer, error) {
+	if cfg.queueDepth < 1 {
+		cfg.queueDepth = 32
+	}
 	bin := cfg.llamaServerBin
 	if bin == "" {
 		if env := os.Getenv("LLAMA_SERVER_BIN"); env != "" {
@@ -90,8 +118,9 @@ func startLlamaServer(cfg *config) (*llamaServer, error) {
 		client:  &http.Client{},
 		cmd:     cmd,
 		logPath: logFile.Name(),
-		sem:     make(chan struct{}, 1),
+		jobs:    make(chan *completionJob, cfg.queueDepth),
 	}
+	go ls.work()
 
 	deadline := time.Now().Add(cfg.startTimeout)
 	for time.Now().Before(deadline) {
@@ -186,31 +215,63 @@ func buildSystemMessage(sourcePlamo, targetPlamo string) string {
 	return b.String()
 }
 
-// complete sends one translation request and returns the generated text.
-// An empty sourcePlamo lets the model auto-detect the source language.
-func (l *llamaServer) complete(ctx context.Context, text, sourcePlamo, targetPlamo string, temperature float64, maxTokens int) (string, error) {
-	reqBody := chatRequest{
-		Model: "plamo-3-translate-0.8b",
-		Messages: []chatMessage{
-			{Role: "system", Content: buildSystemMessage(sourcePlamo, targetPlamo)},
-			{Role: "user", Content: text},
-		},
-		Temperature: temperature,
-		MaxTokens:   maxTokens,
-		Stop:        []string{"<|plamo:tag|>", "<|plamo:bos|>"},
+// work is the single completion worker. It pops jobs from the queue in
+// FIFO order and runs them strictly one at a time, so llama-server's
+// single model slot is never contended and at most one completion is in
+// flight. Jobs whose client went away while queued are skipped without
+// spending model time on them.
+func (l *llamaServer) work() {
+	for job := range l.jobs {
+		if err := job.ctx.Err(); err != nil {
+			job.done <- completionResult{err: err}
+			continue
+		}
+		content, err := l.requestCompletion(job.ctx, job.req)
+		job.done <- completionResult{content: content, err: err}
 	}
+}
+
+// complete queues one translation request and waits for the worker to run
+// it. An empty sourcePlamo lets the model auto-detect the source language.
+// Already-cancelled callers return immediately and a full queue fails fast
+// with errServerBusy instead of waiting.
+func (l *llamaServer) complete(ctx context.Context, text, sourcePlamo, targetPlamo string, temperature float64, maxTokens int) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	job := &completionJob{
+		ctx: ctx,
+		req: chatRequest{
+			Model: "plamo-3-translate-0.8b",
+			Messages: []chatMessage{
+				{Role: "system", Content: buildSystemMessage(sourcePlamo, targetPlamo)},
+				{Role: "user", Content: text},
+			},
+			Temperature: temperature,
+			MaxTokens:   maxTokens,
+			Stop:        []string{"<|plamo:tag|>", "<|plamo:bos|>"},
+		},
+		done: make(chan completionResult, 1),
+	}
+	select {
+	case l.jobs <- job:
+	default:
+		return "", errServerBusy
+	}
+	select {
+	case res := <-job.done:
+		return res.content, res.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// requestCompletion sends one chat completion to llama-server and returns
+// the generated text.
+func (l *llamaServer) requestCompletion(ctx context.Context, reqBody chatRequest) (string, error) {
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", err
-	}
-
-	// Serialize: llama-server has a single slot, so a second concurrent
-	// request would fail while the first one is generating.
-	select {
-	case l.sem <- struct{}{}:
-		defer func() { <-l.sem }()
-	case <-ctx.Done():
-		return "", ctx.Err()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/v1/chat/completions", bytes.NewReader(payload))
