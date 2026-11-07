@@ -32,7 +32,7 @@ type config struct {
 func main() {
 	cfg := &config{}
 	flag.StringVar(&cfg.listen, "listen", "127.0.0.1:5000", "address to listen on")
-	flag.StringVar(&cfg.modelPath, "model", "models/plamo-3-translate-0.8b-Q4_K_M.gguf", "path to the GGUF model file")
+	flag.StringVar(&cfg.modelPath, "model", "models/plamo-3-translate-0.8b-Q2_K.gguf", "path to the GGUF model file")
 	flag.StringVar(&cfg.llamaServerBin, "llama-server-bin", "", "path to llama-server (default: $LLAMA_SERVER_BIN or PATH)")
 	flag.IntVar(&cfg.nCtx, "n-ctx", 4096, "llama-server context window in tokens")
 	flag.IntVar(&cfg.threads, "threads", 0, "CPU threads for llama-server (0 = half of logical CPUs, usually the physical core count)")

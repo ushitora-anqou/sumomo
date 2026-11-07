@@ -13,7 +13,7 @@ works out of the box as the translation backend for
 Run with Nix:
 
 ```console
-$ nix run .#download-model          # save the official GGUF (Q4_K_M, 0.57 GB) into models/
+$ nix run .#download-model          # save the official GGUF (Q2_K, 0.41 GB) into models/
 $ nix run .#sumomo                  # start the server on http://127.0.0.1:5000
 ```
 
@@ -23,7 +23,7 @@ Or with Docker (multi-arch image from GHCR):
 $ docker run --rm -p 5000:5000 -v "$PWD/models:/models" \
     ghcr.io/ushitora-anqou/sumomo \
     --listen "0.0.0.0:5000" \
-    --model /models/plamo-3-translate-0.8b-Q4_K_M.gguf
+    --model /models/plamo-3-translate-0.8b-Q2_K.gguf
 ```
 
 `--listen "0.0.0.0:5000"` is required so the server accepts connections
@@ -78,7 +78,7 @@ $ sumomo --help
   -max-tokens int
     	base generation limit; grows with input length (default 512)
   -model string
-    	path to the GGUF model file (default "models/plamo-3-translate-0.8b-Q4_K_M.gguf")
+    	path to the GGUF model file (default "models/plamo-3-translate-0.8b-Q2_K.gguf")
   -n-ctx int
     	llama-server context window in tokens (default 4096)
   -queue-depth int
@@ -135,7 +135,11 @@ and peak RSS of sequential translations; flags reach sumomo via
 on a 4-core/8-thread machine showed llama-server using every hardware
 thread wastes half the CPU for no latency gain (1.51 vs 0.73 s CPU per
 request), which is why `--threads 0` (the default) resolves to half the
-logical CPUs — usually the physical core count.
+logical CPUs — usually the physical core count. On the same machine the
+Q2_K quantization (the default `--model`) translated ~10% faster with
+~27% less memory than Q4_K_M at equal quality on the benchmark set;
+pass `--model models/plamo-3-translate-0.8b-Q4_K_M.gguf` for the model
+card's recommended quantization.
 
 CI (GitHub Actions) workflows:
 

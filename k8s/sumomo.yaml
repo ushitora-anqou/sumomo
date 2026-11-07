@@ -22,7 +22,7 @@ spec:
         - --listen
         - 0.0.0.0:5000
         - --model
-        - /models/plamo-3-translate-0.8b-Q4_K_M.gguf
+        - /models/plamo-3-translate-0.8b-Q2_K.gguf
         - --n-ctx
         - "4096"
         ports:

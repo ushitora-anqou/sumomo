@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${CLUSTER:-sumomo-e2e}"
 NS=mastodon
-MODEL_REL=plamo-3-translate-0.8b-Q4_K_M.gguf
+MODEL_REL=plamo-3-translate-0.8b-Q2_K.gguf
 MODEL_HOST_DIR="${MODEL_HOST_DIR:-$ROOT/models}"
 KIND_NODE_IMAGE=kindest/node:v1.36.4
 MASTODON_VERSION=v4.3.23

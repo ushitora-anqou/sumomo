@@ -13,7 +13,7 @@ Go 製の単一バイナリで、llama-server を子プロセスとして常駐�
 Nix で実行します。
 
 ```console
-$ nix run .#download-model          # 公式 GGUF(Q4_K_M, 0.57GB)を models/ に保存
+$ nix run .#download-model          # 公式 GGUF(Q2_K, 0.41GB)を models/ に保存
 $ nix run .#sumomo                  # http://127.0.0.1:5000 で起動
 ```
 
@@ -23,7 +23,7 @@ Docker(GHCR のマルチアーキイメージ)でも動きます。
 $ docker run --rm -p 5000:5000 -v "$PWD/models:/models" \
     ghcr.io/ushitora-anqou/sumomo \
     --listen "0.0.0.0:5000" \
-    --model /models/plamo-3-translate-0.8b-Q4_K_M.gguf
+    --model /models/plamo-3-translate-0.8b-Q2_K.gguf
 ```
 
 `--listen "0.0.0.0:5000"` は必須です(デフォルトの 127.0.0.1 では
@@ -80,7 +80,7 @@ $ sumomo --help
   -max-tokens int
     	base generation limit; grows with input length (default 512)
   -model string
-    	path to the GGUF model file (default "models/plamo-3-translate-0.8b-Q4_K_M.gguf")
+    	path to the GGUF model file (default "models/plamo-3-translate-0.8b-Q2_K.gguf")
   -n-ctx int
     	llama-server context window in tokens (default 4096)
   -queue-depth int
@@ -137,7 +137,10 @@ RSS を報告します。フラグは `SUMOMO_ARGS` 経由(例:
 実測では、llama-server が全ハイパースレッドを使うと CPU が約 2 倍に
 なる一方でレイテンシは変わらなかったため(1 リクエストあたり 1.51 秒 vs
 0.73 秒)、`--threads 0`(デフォルト)は論理 CPU の半分(通常は物理
-コア数)に解決します。
+コア数)に解決します。同じ環境では、Q2_K 量子化(デフォルトの
+`--model`)は Q4_K_M 比で約 10% 高速・メモリ約 27% 減でした(ベンチ
+セットで品質は同等)。モデルカード推奨の量子化を使うには
+`--model models/plamo-3-translate-0.8b-Q4_K_M.gguf` を指定してください。
 
 CI(GitHub Actions)のワークフローは次のとおりです。
 

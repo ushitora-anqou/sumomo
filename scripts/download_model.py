@@ -4,8 +4,10 @@
 The quantized GGUF files are published by Preferred Networks at:
   https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF
 
-Q4_K_M is the recommended default (best accuracy/size balance per the model
-card). Set the HF_TOKEN environment variable when a token is required.
+Q2_K is the default because sumomo defaults to it (fastest, ~10% lower
+latency and ~27% less memory than Q4_K_M in our benchmarks); Q4_K_M is the
+model card's recommendation for best accuracy. Set the HF_TOKEN environment
+variable when a token is required.
 """
 
 from __future__ import annotations
@@ -106,8 +108,8 @@ def main() -> int:
     parser.add_argument(
         "--quant",
         choices=QUANTIZATIONS,
-        default="Q4_K_M",
-        help="quantization type (default: Q4_K_M, recommended by the model card)",
+        default="Q2_K",
+        help="quantization type (default: Q2_K, sumomo's default; Q4_K_M has the best accuracy per the model card)",
     )
     parser.add_argument(
         "--dest",
