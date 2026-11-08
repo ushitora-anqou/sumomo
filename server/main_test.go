@@ -15,13 +15,16 @@ import (
 )
 
 // testConfig returns a config with the same defaults as main, but with
-// short timeouts so a stuck request fails the test quickly.
+// short timeouts so a stuck request fails the test quickly. The keep-alive
+// interval stays long so ordinary tests exercise the buffered path; the
+// streaming tests shorten it explicitly.
 func testConfig() *config {
 	return &config{
-		maxTokens:      512,
-		nCtx:           4096,
-		charLimit:      1500,
-		requestTimeout: 10 * time.Second,
+		maxTokens:         512,
+		nCtx:              4096,
+		charLimit:         1500,
+		requestTimeout:    10 * time.Second,
+		keepAliveInterval: 10 * time.Second,
 	}
 }
 

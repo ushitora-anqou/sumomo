@@ -24,6 +24,10 @@ type config struct {
 	queueDepth     int
 	requestTimeout time.Duration
 	startTimeout   time.Duration
+	// keepAliveInterval is how often /translate emits a JSON-legal space
+	// after sending the opening brace, keeping Mastodon's 30-second read
+	// deadline alive. Not a flag; tests shorten it.
+	keepAliveInterval time.Duration
 	// llamaExtra holds extra arguments forwarded verbatim to llama-server
 	// (--llama-server-extra), for tuning.
 	llamaExtra []string
@@ -48,6 +52,11 @@ func main() {
 	flag.Func("llama-server-extra", "extra argument forwarded to llama-server (repeatable, e.g. --llama-server-extra=-fa)",
 		func(s string) error { cfg.llamaExtra = append(cfg.llamaExtra, s); return nil })
 	flag.Parse()
+
+	// Mastodon's HTTP client times out after 10 idle seconds but allows a
+	// cumulative 30-second deadline while bytes keep arriving; a space
+	// every 9 seconds keeps /translate responses inside that budget.
+	cfg.keepAliveInterval = 9 * time.Second
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

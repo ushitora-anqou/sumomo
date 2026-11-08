@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -268,6 +269,111 @@ func TestTranslateUpstreamFailure(t *testing.T) {
 	}
 	if msg, _ := body["error"].(string); !strings.Contains(msg, "Cannot translate text") {
 		t.Errorf("error = %v, want it to wrap the failure", body["error"])
+	}
+}
+
+// TestTranslateStreamsOpeningBrace verifies that the first response byte
+// (the JSON opening brace) leaves before the translation finishes, so a
+// client like Mastodon starts (and keeps alive) its read deadline early.
+func TestTranslateStreamsOpeningBrace(t *testing.T) {
+	cfg := testConfig()
+	cfg.keepAliveInterval = 30 * time.Millisecond
+	ts := newTestServer(t, cfg, func(p chatProbe) (int, string) {
+		time.Sleep(300 * time.Millisecond)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
+	})
+	resp, err := http.Post(ts.URL+"/translate", "application/json",
+		strings.NewReader(`{"q":"Hello","source":"en","target":"ja"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	br := bufio.NewReader(resp.Body)
+	t0 := time.Now()
+	b, err := br.ReadByte()
+	if err != nil {
+		t.Fatalf("reading the first byte: %v", err)
+	}
+	if b != '{' {
+		t.Fatalf("first byte = %q, want '{'", b)
+	}
+	if d := time.Since(t0); d > 150*time.Millisecond {
+		t.Errorf("first byte arrived after %v; it must precede the 300ms translation", d)
+	}
+	// The rest still parses as the complete object.
+	rest, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(append([]byte{'{'}, rest...), &out); err != nil {
+		t.Fatalf("body %q does not parse: %v", rest, err)
+	}
+	if out["translatedText"] != "ja: Hello" {
+		t.Errorf("translatedText = %v", out["translatedText"])
+	}
+}
+
+// TestTranslateKeepAliveSpaces verifies that slow translations emit
+// JSON-legal spaces and that the assembled body still parses.
+func TestTranslateKeepAliveSpaces(t *testing.T) {
+	cfg := testConfig()
+	cfg.keepAliveInterval = 30 * time.Millisecond
+	ts := newTestServer(t, cfg, func(p chatProbe) (int, string) {
+		time.Sleep(120 * time.Millisecond)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
+	})
+	resp, err := http.Post(ts.URL+"/translate", "application/json",
+		strings.NewReader(`{"q":"Hello","source":"en","target":"ja"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("body %q does not parse: %v", raw, err)
+	}
+	if !strings.Contains(string(raw), " ") {
+		t.Errorf("body %q contains no keep-alive spaces; writeJSON normally emits none", raw)
+	}
+	if out["translatedText"] != "ja: Hello" {
+		t.Errorf("translatedText = %v", out["translatedText"])
+	}
+}
+
+// TestTranslateStreamErrorAfterOpen verifies that a failure occurring after
+// the stream has opened still yields a complete JSON error object.
+func TestTranslateStreamErrorAfterOpen(t *testing.T) {
+	cfg := testConfig()
+	cfg.keepAliveInterval = 30 * time.Millisecond
+	ts := newTestServer(t, cfg, func(p chatProbe) (int, string) {
+		if p.User == "second" {
+			return http.StatusServiceUnavailable, chatErrorJSON("boom")
+		}
+		time.Sleep(60 * time.Millisecond) // let the stream open
+		return http.StatusOK, chatCompletionJSON("ok")
+	})
+	resp, err := http.Post(ts.URL+"/translate", "application/json",
+		strings.NewReader(`{"q":["first","second"],"source":"en","target":"ja"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("streamed error body %q does not parse: %v", raw, err)
+	}
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "boom") {
+		t.Errorf("error = %v, want the upstream message", out["error"])
 	}
 }
 

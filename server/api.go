@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -45,6 +47,87 @@ func writeTranslateError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "Cannot translate text: "+err.Error())
+}
+
+// jsonStream writes a JSON object incrementally so that the first byte (the
+// opening brace) leaves immediately and keep-alive spaces trickle out while
+// the translation is still running.
+//
+// Mastodon's translation HTTP client (app/lib/request.rb, v4.3) times out a
+// read after 10 idle seconds but allows a cumulative 30-second deadline as
+// long as bytes keep arriving. Sending "{" up front and one JSON-legal
+// space every 9 seconds therefore extends the effective timeout for large
+// batch requests (e.g. posts with media descriptions) from 10 to 30
+// seconds. Spaces between JSON tokens do not change the parsed value.
+type jsonStream struct {
+	w       http.ResponseWriter
+	flusher http.Flusher
+	mu      sync.Mutex
+	opened  bool
+}
+
+// newJSONStream wraps a handler's writer; nothing is sent until the first
+// write.
+func newJSONStream(w http.ResponseWriter) *jsonStream {
+	s := &jsonStream{w: w}
+	if f, ok := w.(http.Flusher); ok {
+		s.flusher = f
+	}
+	return s
+}
+
+// write sends p, opening the stream with the response head and the JSON
+// opening brace on first use.
+func (s *jsonStream) write(p []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.opened {
+		s.opened = true
+		s.w.Header().Set("Content-Type", "application/json")
+		s.w.WriteHeader(http.StatusOK)
+		if _, err := s.w.Write([]byte("{")); err != nil {
+			return err
+		}
+		s.flusher.Flush()
+	}
+	_, err := s.w.Write(p)
+	s.flusher.Flush()
+	return err
+}
+
+// isOpened reports whether the response head and "{" have been sent.
+func (s *jsonStream) isOpened() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.opened
+}
+
+// finishError completes an already-opened stream with an error object. The
+// HTTP status is 200 by then; Mastodon fails the request when the body has
+// no translatedText, which is the same outcome as the timed-out case.
+func (s *jsonStream) finishError(msg string) {
+	body, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		return
+	}
+	_ = s.write(body[1:]) // strip the '{' that was already sent
+}
+
+// keepAlive writes one JSON-legal space every interval until stop closes or
+// ctx is done (client disconnected).
+func (s *jsonStream) keepAlive(ctx context.Context, stop <-chan struct{}, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_ = s.write([]byte(" "))
+		}
+	}
 }
 
 // cors mimics LibreTranslate's CORS middleware.
@@ -266,6 +349,14 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.requestTimeout)
 	defer cancel()
 
+	// All validation passed: open the response stream and keep it alive
+	// with periodic spaces so a translation that outlasts Mastodon's
+	// 10-second per-read timeout still fits its 30-second deadline.
+	stream := newJSONStream(w)
+	stopKeepAlive := make(chan struct{})
+	defer close(stopKeepAlive)
+	go stream.keepAlive(r.Context(), stopKeepAlive, s.cfg.keepAliveInterval)
+
 	translateOne := func(text string) (string, bool, error) {
 		// Non-translatable input (numbers, punctuation only) is returned
 		// unchanged, matching LibreTranslate's behavior.
@@ -288,6 +379,15 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	for i, text := range req.texts {
 		out, translated, err := translateOne(text)
 		if err != nil {
+			if stream.isOpened() {
+				var ae *apiError
+				msg := "Cannot translate text: " + err.Error()
+				if errors.As(err, &ae) {
+					msg = ae.msg
+				}
+				stream.finishError(msg)
+				return
+			}
 			writeTranslateError(w, err)
 			return
 		}
@@ -334,7 +434,13 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 			resp["alternatives"] = altLists
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	// The opening brace went out before the translations started; send the
+	// rest of the object (json.Marshal yields "{...}", so skip its brace).
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	_ = stream.write(payload[1:])
 }
 
 func (s *server) handleLanguages(w http.ResponseWriter, r *http.Request) {
