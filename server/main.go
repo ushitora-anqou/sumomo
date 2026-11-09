@@ -72,7 +72,7 @@ func main() {
 
 	httpSrv := &http.Server{
 		Addr:    cfg.listen,
-		Handler: cors(s.routes()),
+		Handler: accessLog(cors(s.routes())),
 	}
 
 	errCh := make(chan error, 1)

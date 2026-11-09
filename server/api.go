@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -142,6 +143,45 @@ func cors(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// statusRecorder wraps an http.ResponseWriter to capture the status code
+// the handler wrote. It forwards Flush so streaming responses (jsonStream)
+// keep working through the wrapper; without it the wrapped writer would
+// not satisfy http.Flusher and streaming would panic on a nil flusher.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// Flush forwards to the wrapped writer when it supports flushing.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// accessLog logs one line per request: remote address, method, path,
+// status code, and duration. The query string is intentionally omitted so
+// credentials never reach the log.
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		status := rec.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		log.Printf("access: %s %s %s %d %s",
+			r.RemoteAddr, r.Method, r.URL.Path, status,
+			time.Since(start).Round(time.Millisecond))
 	})
 }
 
