@@ -417,6 +417,12 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	results := make([]string, len(req.texts))
 	altLists := make([][]string, len(req.texts))
 	for i, text := range req.texts {
+		// Hashtag/mention sigils are decoration, not content: strip
+		// them so "Hello #I am Tony" translates as "Hello I am Tony".
+		// HTML input is flattened — sigils included — in translateHTML.
+		if format != "html" {
+			text = stripDecoration(text)
+		}
 		out, translated, err := translateOne(text)
 		if err != nil {
 			if stream.isOpened() {

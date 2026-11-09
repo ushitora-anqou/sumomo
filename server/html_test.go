@@ -26,11 +26,44 @@ func TestHTMLHasTranslatableText(t *testing.T) {
 	}
 }
 
+func TestHTMLToText(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		// Block boundaries become newlines; words never concatenate.
+		{"<p>Hello</p><p>World</p>", "Hello\nWorld"},
+		{"a<br/>b", "a\nb"},
+		{"<ul><li>a</li><li>b</li></ul>", "a\nb"},
+		// Entities are decoded by the parser.
+		{"<p>a &amp; b &lt; c</p>", "a & b < c"},
+		// Tags and attributes are decoration and vanish.
+		{`<a href="https://example.com/x" class="x">Link</a> ok`, "Link ok"},
+		{"Hello <img src=\"/emoji/smile.png\" alt=\":smile:\"/> world", "Hello  world"},
+		// Hashtag/mention sigils are stripped when they start a word.
+		{`Hello <a href="https://example.com/tags/x" class="mention hashtag" rel="tag">#<span>I am Tony</span></a>`, "Hello I am Tony"},
+		{"Hello #I am Tony", "Hello I am Tony"},
+		{`<span class="h-card"><a href="https://x/@u" class="u-url mention">@<span>u</span></a></span> hi`, "u hi"},
+		{"#leading and @mid sigils", "leading and mid sigils"},
+		// Sigils inside a word (C#, email) are not decoration.
+		{"C# and user@example.com stay", "C# and user@example.com stay"},
+		// Script/style contents are not text.
+		{"<script>alert(1)</script>ok", "ok"},
+		{"<style>a{color:red}</style>ok", "ok"},
+		{"plain text", "plain text"},
+	}
+	for _, tt := range tests {
+		if got := htmlToText(tt.in); got != tt.want {
+			t.Errorf("htmlToText(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestTranslateHTML(t *testing.T) {
-	var translated []string
+	var sent []string
 	mock := newMockLlama(t, func(p chatProbe) (int, string) {
-		translated = append(translated, p.User)
-		return http.StatusOK, chatCompletionJSON("「" + p.User + "」")
+		sent = append(sent, p.User)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
 	})
 	s := &server{cfg: testConfig(), llama: mock}
 
@@ -39,36 +72,68 @@ func TestTranslateHTML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("translateHTML() error: %v", err)
 	}
-	// Text runs are wrapped by the mock; tags and non-translatable runs
-	// stay verbatim, and the translated text is re-escaped, so the "&"
-	// comes back as "&amp;" just like the input entity.
-	want := "<p>「Hello &amp; bye」</p><br/>123"
-	if out != want {
-		t.Errorf("translateHTML() = %q, want %q", out, want)
+	// The whole fragment goes to the model as one plain-text unit: tags
+	// dropped, entities decoded, block boundaries as newlines. Even the
+	// digit-only run is part of the single text, so the sentence context
+	// is never fragmented.
+	want := "Hello & bye\n\n123"
+	if len(sent) != 1 || sent[0] != want {
+		t.Errorf("model input = %v, want exactly one call with %q", sent, want)
 	}
-	// Only the translatable text run was sent to the model.
-	if len(translated) != 1 || translated[0] != "Hello & bye" {
-		t.Errorf("translated text runs = %v, want [Hello & bye]", translated)
+	if out != "ja: "+want {
+		t.Errorf("translateHTML() = %q, want %q", out, "ja: "+want)
 	}
 }
 
-func TestTranslateHTMLKeepsMarkupVerbatim(t *testing.T) {
+// TestTranslateHTMLStripsDecoration covers the Mastodon shape: hashtag
+// and mention links carry decoration (#/@ sigils, spans, hrefs) that must
+// all vanish before translation, leaving one plain sentence.
+func TestTranslateHTMLStripsDecoration(t *testing.T) {
+	var sent []string
 	mock := newMockLlama(t, func(p chatProbe) (int, string) {
-		return http.StatusOK, chatCompletionJSON("「" + p.User + "」")
+		sent = append(sent, p.User)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
 	})
 	s := &server{cfg: testConfig(), llama: mock}
 
-	// Attributes and self-closing tags must survive untouched; the
-	// unterminated "<" is plain text (a text run), and digits-only runs
-	// pass through without a model call.
-	in := `<a href="https://example.com/x?a=1&amp;b=2" class="x">Link</a> a < b <br/> 42`
+	in := `<p>Hello <span class="h-card"><a href="https://example.com/@tony" class="u-url mention">@<span>tony</span></a></span>, welcome to <a href="https://example.com/tags/iot" class="mention hashtag" rel="tag">#<span>I am Tony</span></a></p>`
 	out, err := s.translateHTML(context.Background(), in, "en", "ja")
 	if err != nil {
 		t.Fatalf("translateHTML() error: %v", err)
 	}
-	want := `<a href="https://example.com/x?a=1&amp;b=2" class="x">「Link」</a>「 a &lt; b 」<br/> 42`
-	if out != want {
-		t.Errorf("translateHTML() =\n %q\nwant\n %q", out, want)
+	want := "Hello tony, welcome to I am Tony"
+	if len(sent) != 1 || sent[0] != want {
+		t.Errorf("model input = %v, want exactly one call with %q", sent, want)
+	}
+	if out != "ja: "+want {
+		t.Errorf("translateHTML() = %q, want %q", out, "ja: "+want)
+	}
+}
+
+// TestTranslatePlainTextStripsDecoration covers format=text input: the
+// sigils are stripped even without markup, and sigils inside a word
+// (email, C#) survive.
+func TestTranslatePlainTextStripsDecoration(t *testing.T) {
+	var sent []string
+	ts := newTestServer(t, nil, func(p chatProbe) (int, string) {
+		sent = append(sent, p.User)
+		return http.StatusOK, chatCompletionJSON("ja: " + p.User)
+	})
+	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":["Hello #I am Tony","ping @tony now","C# and user@example.com"],"source":"en","target":"ja"}`)
+	want := []string{"Hello I am Tony", "ping tony now", "C# and user@example.com"}
+	for i, w := range want {
+		if body["translatedText"].([]any)[i] != "ja: "+w {
+			t.Errorf("translatedText[%d] = %v, want %q", i, body["translatedText"].([]any)[i], "ja: "+w)
+		}
+	}
+	if len(sent) != 3 {
+		t.Fatalf("model calls = %d, want 3", len(sent))
+	}
+	for i, w := range want {
+		if sent[i] != w {
+			t.Errorf("model input[%d] = %q, want %q", i, sent[i], w)
+		}
 	}
 }
 

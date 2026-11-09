@@ -225,8 +225,10 @@ func TestTranslateHTMLFormat(t *testing.T) {
 	ts := newTestServer(t, nil, echoTranslate)
 	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"<p>Hello</p>","source":"en","target":"ja","format":"html"}`)
-	if got := body["translatedText"]; got != "<p>ja: Hello</p>" {
-		t.Errorf("translatedText = %v, want tags preserved around the translated text", got)
+	// Decoration is stripped before translation: the model sees "Hello"
+	// (no tags) and the markup is not restored, the result is plain text.
+	if got := body["translatedText"]; got != "ja: Hello" {
+		t.Errorf("translatedText = %v, want the flattened text without tags", got)
 	}
 }
 
