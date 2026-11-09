@@ -64,6 +64,9 @@ deployment/Mastodon integration.
   - `detect.go` — Unicode-script-based language detection
   - `html.go` — `format=html` translation via the x/net/html tokenizer
     (tags preserved, entities round-tripped)
+  - `logging.go` — wide-event request logging: one JSON line per request
+    (`log/slog`) with the request basics plus the payload handlers attach
+    via `addEventAttrs` (api_key values are never logged)
   - `*_test.go` — unit tests; the mock llama-server helpers live in `main_test.go`
 - `scripts/` — `download_model.py` (GGUF downloader), `translate.py` (one-shot
   CLI), `e2e.sh` (E2E test; run via `make test-e2e`)

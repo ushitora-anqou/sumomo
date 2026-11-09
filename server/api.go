@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -146,45 +146,6 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-// statusRecorder wraps an http.ResponseWriter to capture the status code
-// the handler wrote. It forwards Flush so streaming responses (jsonStream)
-// keep working through the wrapper; without it the wrapped writer would
-// not satisfy http.Flusher and streaming would panic on a nil flusher.
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *statusRecorder) WriteHeader(code int) {
-	r.status = code
-	r.ResponseWriter.WriteHeader(code)
-}
-
-// Flush forwards to the wrapped writer when it supports flushing.
-func (r *statusRecorder) Flush() {
-	if f, ok := r.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-// accessLog logs one line per request: remote address, method, path,
-// status code, and duration. The query string is intentionally omitted so
-// credentials never reach the log.
-func accessLog(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w}
-		next.ServeHTTP(rec, r)
-		status := rec.status
-		if status == 0 {
-			status = http.StatusOK
-		}
-		log.Printf("access: %s %s %s %d %s",
-			r.RemoteAddr, r.Method, r.URL.Path, status,
-			time.Since(start).Round(time.Millisecond))
-	})
-}
-
 // routes builds the LibreTranslate-compatible API routing table.
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -207,6 +168,16 @@ type translateRequest struct {
 }
 
 var errInvalidJSON = &apiError{http.StatusBadRequest, "Invalid JSON format"}
+
+// qEventValue mirrors how q arrived, so the wide event shows exactly what
+// the client sent: a bare string for single-text requests, an array
+// otherwise.
+func qEventValue(req *translateRequest) any {
+	if req.single && len(req.texts) == 1 {
+		return req.texts[0]
+	}
+	return req.texts
+}
 
 // parseTranslateRequest accepts both JSON bodies (q as string or array of
 // strings) and form-encoded bodies, like LibreTranslate.
@@ -319,6 +290,18 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// Record the payload in the request's wide event before any
+	// validation, so rejected requests (wrong API key, bad language, over
+	// the char limit, ...) show what was sent. api_key is reduced to its
+	// presence; never its value.
+	addEventAttrs(r.Context(),
+		slog.Any("q", qEventValue(req)),
+		slog.String("source", req.source),
+		slog.String("target", req.target),
+		slog.String("format", req.format),
+		slog.Int("alternatives", req.alternatives),
+		slog.Bool("api_key", req.apiKey != ""),
+	)
 	if ae := s.checkAPIKey(req); ae != nil {
 		writeError(w, ae.status, ae.msg)
 		return
@@ -503,7 +486,7 @@ func (s *server) handleLanguages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleDetect(w http.ResponseWriter, r *http.Request) {
-	var q string
+	var q, apiKey string
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		var raw struct {
 			Q      string `json:"q"`
@@ -515,29 +498,28 @@ func (s *server) handleDetect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q = raw.Q
-		if s.cfg.apiKey != "" && raw.APIKey == "" {
-			writeError(w, http.StatusBadRequest, "Please contact the server operator to get an API key")
-			return
-		}
-		if s.cfg.apiKey != "" && raw.APIKey != s.cfg.apiKey {
-			writeError(w, http.StatusForbidden, "Invalid API key")
-			return
-		}
+		apiKey = raw.APIKey
 	} else {
 		if err := r.ParseForm(); err != nil {
 			writeError(w, http.StatusBadRequest, "Invalid request")
 			return
 		}
 		q = r.PostFormValue("q")
-		key := r.PostFormValue("api_key")
-		if s.cfg.apiKey != "" && key == "" {
-			writeError(w, http.StatusBadRequest, "Please contact the server operator to get an API key")
-			return
-		}
-		if s.cfg.apiKey != "" && key != s.cfg.apiKey {
-			writeError(w, http.StatusForbidden, "Invalid API key")
-			return
-		}
+		apiKey = r.PostFormValue("api_key")
+	}
+	// Record the payload in the request's wide event before validation,
+	// like handleTranslate; the api_key value itself is never logged.
+	addEventAttrs(r.Context(),
+		slog.String("q", q),
+		slog.Bool("api_key", apiKey != ""),
+	)
+	if s.cfg.apiKey != "" && apiKey == "" {
+		writeError(w, http.StatusBadRequest, "Please contact the server operator to get an API key")
+		return
+	}
+	if s.cfg.apiKey != "" && apiKey != s.cfg.apiKey {
+		writeError(w, http.StatusForbidden, "Invalid API key")
+		return
 	}
 	if q == "" {
 		writeError(w, http.StatusBadRequest, "Invalid request: missing q parameter")
