@@ -348,6 +348,13 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 
 	if s.cfg.charLimit > 0 {
 		for _, t := range req.texts {
+			// HTML carries much of its length in markup (tags,
+			// attributes, entities) that is stripped before
+			// translating; the limit applies to the text that
+			// actually reaches the model.
+			if format == "html" {
+				t = htmlToText(t)
+			}
 			if n := utf8.RuneCountInString(t); n > s.cfg.charLimit {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf(
 					"Invalid request: request (%d) exceeds text limit (%d)", n, s.cfg.charLimit))

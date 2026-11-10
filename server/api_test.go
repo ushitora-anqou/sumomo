@@ -479,6 +479,34 @@ func TestTranslateCharLimit(t *testing.T) {
 	}
 }
 
+func TestTranslateCharLimitHTML(t *testing.T) {
+	cfg := testConfig()
+	cfg.charLimit = 15
+	ts := newTestServer(t, cfg, echoTranslate)
+
+	// The raw fragment (17 runes with tags) exceeds the limit, but the
+	// flattened text does not: the limit must apply to the stripped text.
+	status, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"<p>abcdefghij</p>","source":"en","target":"ja","format":"html"}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body = %v, want 200 (tags do not count)", status, body)
+	}
+	if got := body["translatedText"]; got != "ja: abcdefghij" {
+		t.Errorf("translatedText = %v, want %q", got, "ja: abcdefghij")
+	}
+
+	// Still over the limit once the markup is stripped.
+	status, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"<p>abcdefghijklmnopqrstuvwx</p>","source":"en","target":"ja","format":"html"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", status)
+	}
+	want := "Invalid request: request (24) exceeds text limit (15)"
+	if msg, _ := body["error"].(string); msg != want {
+		t.Errorf("error = %q, want %q", msg, want)
+	}
+}
+
 func TestTranslateRequiresAPIKey(t *testing.T) {
 	cfg := testConfig()
 	cfg.apiKey = "secret"
