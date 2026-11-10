@@ -80,8 +80,10 @@ func TestTranslateHTML(t *testing.T) {
 	if len(sent) != 1 || sent[0] != want {
 		t.Errorf("model input = %v, want exactly one call with %q", sent, want)
 	}
-	if out != "ja: "+want {
-		t.Errorf("translateHTML() = %q, want %q", out, "ja: "+want)
+	// On the way out the text is HTML again: line breaks restored as
+	// <br> and text nodes escaped, so <br> is the only markup.
+	if out != "ja: Hello &amp; bye<br><br>123" {
+		t.Errorf("translateHTML() = %q, want %q", out, "ja: Hello &amp; bye<br><br>123")
 	}
 }
 

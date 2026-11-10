@@ -94,7 +94,28 @@ func htmlHasTranslatableText(fragment string) bool {
 // LibreTranslate does, fragments sentences that span markup ("Hello",
 // "#", "I am Tony" instead of "Hello I am Tony") and hurts accuracy;
 // translating one unit keeps the full sentence intact for the model.
+// The model preserves the input line structure, so line breaks come
+// back out as <br> — the one piece of markup worth restoring, since
+// Mastodon renders translatedText as HTML where a plain newline
+// collapses to a space.
 func (s *server) translateHTML(ctx context.Context, fragment, srcPlamo, tgtPlamo string) (string, error) {
 	text := htmlToText(fragment)
-	return s.llama.complete(ctx, text, srcPlamo, tgtPlamo, 0.0, s.maxTokensFor(text))
+	out, err := s.llama.complete(ctx, text, srcPlamo, tgtPlamo, 0.0, s.maxTokensFor(text))
+	if err != nil {
+		return "", err
+	}
+	return textToHTML(out), nil
+}
+
+// textToHTML turns a translated plain text back into an HTML fragment:
+// each line break becomes a <br> and everything else is escaped, so the
+// only markup in the output is the line breaks themselves.
+func textToHTML(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		lines[i] = xhtml.EscapeString(l)
+	}
+	return strings.Join(lines, "<br>")
 }

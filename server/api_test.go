@@ -226,9 +226,40 @@ func TestTranslateHTMLFormat(t *testing.T) {
 	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
 		`{"q":"<p>Hello</p>","source":"en","target":"ja","format":"html"}`)
 	// Decoration is stripped before translation: the model sees "Hello"
-	// (no tags) and the markup is not restored, the result is plain text.
+	// (no tags). No markup is restored except line breaks, which become
+	// <br>; a single line therefore comes back as plain text.
 	if got := body["translatedText"]; got != "ja: Hello" {
 		t.Errorf("translatedText = %v, want the flattened text without tags", got)
+	}
+}
+
+func TestTranslateHTMLLineBreaks(t *testing.T) {
+	ts := newTestServer(t, nil, echoTranslate)
+
+	// <br> and </p><p> boundaries flatten to newlines, which the model
+	// preserves; they must come back as <br> in the translated HTML.
+	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"<p>RPM v6 approved</p><p>ThinLTO rejected<br>details at the link</p>","source":"en","target":"ja","format":"html"}`)
+	if got := body["translatedText"]; got != "ja: RPM v6 approved<br>ThinLTO rejected<br>details at the link" {
+		t.Errorf("translatedText = %v, want line breaks restored as <br>", got)
+	}
+
+	// A blank line (consecutive <br>) survives as an empty line.
+	_, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"first<br><br>second","source":"en","target":"ja","format":"html"}`)
+	if got := body["translatedText"]; got != "ja: first<br><br>second" {
+		t.Errorf("translatedText = %v, want the blank line kept as <br><br>", got)
+	}
+
+	// The output is HTML now: text must be escaped so <br> is the only
+	// markup in it.
+	ts2 := newTestServer(t, nil, func(p chatProbe) (int, string) {
+		return http.StatusOK, chatCompletionJSON("a < b & c\nd < e")
+	})
+	_, _, body = postJSON(t, ts2.URL+"/translate", "application/json",
+		`{"q":"<p>x<br>y</p>","source":"en","target":"ja","format":"html"}`)
+	if got := body["translatedText"]; got != "a &lt; b &amp; c<br>d &lt; e" {
+		t.Errorf("translatedText = %v, want escaped text nodes joined by <br>", got)
 	}
 }
 
