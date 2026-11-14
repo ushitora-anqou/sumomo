@@ -121,6 +121,8 @@ $ sumomo --help
     	llama-server startup timeout (default 5m0s)
   -threads int
     	CPU threads for llama-server (0 = half of logical CPUs, usually the physical core count)
+  -translation-suffix string
+    	suffix appended to each translated text (empty = none) (default "(translated by PLaMo)")
 ```
 
 モデルファイルが存在しない場合、ファイル名が公式リリースのものと
