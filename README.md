@@ -38,6 +38,38 @@ $ curl -s http://127.0.0.1:5000/translate -H 'Content-Type: application/json' \
 {"translatedText":"The meeting has been rescheduled for next Monday."}
 ```
 
+## Model license
+
+sumomo's own code is MIT, but the translation model is **not** open
+source. PLaMo is distributed under the
+[PLaMo Community License](https://plamo.preferredai.jp/info/plamo-community-license-en)
+([日本語](https://plamo.preferredai.jp/info/plamo-community-license-ja))
+from Preferred Networks; running sumomo uses the model, and by using it
+you are bound by that license. The points below are an unofficial
+summary — read the license text itself before deploying. Highlights:
+
+- **Commercial use** requires *both* prior registration on PFN's
+  registration form (linked from the license) *and* that your (or your
+  affiliates') latest-fiscal-year revenue does not exceed ¥1 billion.
+  The license defines "commercial" broadly: serving translations through
+  a hosted API — exactly what sumomo does — and internal business use
+  both count, and anything beyond the conditions needs a commercial
+  license from PFN.
+- **Redistributing the model** (e.g. handing the GGUF to a third party)
+  requires providing a copy of the license, stating "Built with PLaMo"
+  on the related website / UI / docs, and including "PLaMo" in the name
+  of any AI model built with it.
+- **Publishing translations**: outputs of a conversion model
+  (translation included) may be published without attribution, except
+  when they form all or a substantial part of a standalone long-form
+  publication (a book, paper, ...), which must state that PLaMo was
+  used. Models trained on the outputs become derived models under the
+  same license.
+
+The GGUF is bundled with neither the binary nor the container image; it
+is downloaded from Hugging Face at first run, and the license binds
+whoever uses or redistributes the model.
+
 ## API
 
 The API is compatible with LibreTranslate's.
