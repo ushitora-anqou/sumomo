@@ -17,7 +17,8 @@ import (
 // testConfig returns a config with the same defaults as main, but with
 // short timeouts so a stuck request fails the test quickly. The keep-alive
 // interval stays long so ordinary tests exercise the buffered path; the
-// streaming tests shorten it explicitly.
+// streaming tests shorten it explicitly. translationSuffix stays empty so
+// assertions focus on the translation itself; the suffix tests set it.
 func testConfig() *config {
 	return &config{
 		maxTokens:         512,

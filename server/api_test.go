@@ -279,6 +279,47 @@ func TestTranslatePassthroughNonTranslatable(t *testing.T) {
 	}
 }
 
+func TestTranslateSuffix(t *testing.T) {
+	cfg := testConfig()
+	cfg.translationSuffix = "(by PLaMo)"
+	ts := newTestServer(t, cfg, echoTranslate)
+
+	// Single text: the suffix follows the translation after a space.
+	_, _, body := postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"Hello","source":"en","target":"ja"}`)
+	if got := body["translatedText"]; got != "ja: Hello (by PLaMo)" {
+		t.Errorf("translatedText = %v, want %q", got, "ja: Hello (by PLaMo)")
+	}
+
+	// Batch: every translated element gets it.
+	_, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":["Hello","Bye"],"source":"en","target":"ja"}`)
+	got, _ := body["translatedText"].([]any)
+	if len(got) != 2 || got[0] != "ja: Hello (by PLaMo)" || got[1] != "ja: Bye (by PLaMo)" {
+		t.Errorf("translatedText = %v, want the suffix on each element", got)
+	}
+
+	// Pass-through of a non-translatable text: no suffix.
+	_, _, body = postJSON(t, ts.URL+"/translate", "application/json",
+		`{"q":"123-456","source":"en","target":"ja"}`)
+	if got := body["translatedText"]; got != "123-456" {
+		t.Errorf("translatedText = %v, want the bare original (no suffix)", got)
+	}
+
+	// HTML output: the suffix is entity-escaped and appended after the
+	// final line, so it renders as literal text.
+	cfg2 := testConfig()
+	cfg2.translationSuffix = "<by PLaMo>"
+	ts2 := newTestServer(t, cfg2, func(p chatProbe) (int, string) {
+		return http.StatusOK, chatCompletionJSON("ja: one\ntwo")
+	})
+	_, _, body = postJSON(t, ts2.URL+"/translate", "application/json",
+		`{"q":"<p>one<br>two</p>","source":"en","target":"ja","format":"html"}`)
+	if got := body["translatedText"]; got != "ja: one<br>two &lt;by PLaMo&gt;" {
+		t.Errorf("translatedText = %v, want the escaped suffix after the last line", got)
+	}
+}
+
 func TestTranslateFormEncoded(t *testing.T) {
 	ts := newTestServer(t, nil, echoTranslate)
 	form := url.Values{"q": {"Hello"}, "source": {"en"}, "target": {"ja"}}

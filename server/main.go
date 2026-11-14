@@ -22,8 +22,11 @@ type config struct {
 	apiKey         string
 	charLimit      int
 	queueDepth     int
-	requestTimeout time.Duration
-	startTimeout   time.Duration
+	// translationSuffix is appended to each translated text to mark it as
+	// machine translation (--translation-suffix).
+	translationSuffix string
+	requestTimeout    time.Duration
+	startTimeout      time.Duration
 	// keepAliveInterval is how often /translate emits a JSON-legal space
 	// after sending the opening brace, keeping Mastodon's 30-second read
 	// deadline alive. Not a flag; tests shorten it.
@@ -47,6 +50,7 @@ func main() {
 	// post bodies are capped at 500 by StatusLengthValidator.
 	flag.IntVar(&cfg.charLimit, "char-limit", 1500, "per-text character limit (<=0 = unlimited)")
 	flag.IntVar(&cfg.queueDepth, "queue-depth", 32, "completions to queue while one runs; excess requests get 503")
+	flag.StringVar(&cfg.translationSuffix, "translation-suffix", "(translated by PLaMo)", "suffix appended to each translated text (empty = none)")
 	flag.DurationVar(&cfg.requestTimeout, "request-timeout", 10*time.Minute, "per-request translation timeout")
 	flag.DurationVar(&cfg.startTimeout, "start-timeout", 5*time.Minute, "llama-server startup timeout")
 	flag.Func("llama-server-extra", "extra argument forwarded to llama-server (repeatable, e.g. --llama-server-extra=-fa)",

@@ -427,6 +427,11 @@ func (s *server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 			writeTranslateError(w, err)
 			return
 		}
+		// The suffix marks actual machine translation: pass-through
+		// results (numbers, symbols) are returned as-is, without it.
+		if translated {
+			out = s.appendTranslationSuffix(out, format)
+		}
 		results[i] = out
 		if !translated {
 			continue

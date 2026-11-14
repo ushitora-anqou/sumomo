@@ -119,3 +119,20 @@ func textToHTML(text string) string {
 	}
 	return strings.Join(lines, "<br>")
 }
+
+// appendTranslationSuffix appends the configured suffix (e.g. "(translated
+// by PLaMo)", set with --translation-suffix) after a space, marking the
+// text as machine translation. For HTML-formatted output the suffix is
+// entity-escaped so it renders as literal text; an empty suffix leaves the
+// text unchanged. Texts that were not actually translated (pass-through of
+// digits, punctuation, ...) never reach this function.
+func (s *server) appendTranslationSuffix(text, format string) string {
+	if s.cfg.translationSuffix == "" {
+		return text
+	}
+	suffix := " " + s.cfg.translationSuffix
+	if format == "html" {
+		suffix = xhtml.EscapeString(suffix)
+	}
+	return text + suffix
+}
