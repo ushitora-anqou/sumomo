@@ -145,7 +145,8 @@ card's recommended quantization.
 
 CI (GitHub Actions) workflows:
 
-- **CI** (`ci.yml`): flake check, `make lint` (golangci-lint), `make test`
+- **CI** (`ci.yml`): flake check, `make fmt` (gofmt; must leave no diff),
+  `make lint` (golangci-lint), `make test`
   (unit tests), and builds of the server package and the image;
   the dev shell is loaded with
   [nix-develop](https://github.com/nicknovitski/nix-develop) (pinned by

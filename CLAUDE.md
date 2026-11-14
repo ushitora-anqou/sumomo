@@ -76,8 +76,8 @@ deployment/Mastodon integration.
 
 ## CI / Release
 
-- `ci.yml`: flake check, `make lint`, `make test`, builds of the
-  server package and the image
+- `ci.yml`: flake check, `make fmt` (must leave no diff), `make lint`,
+  `make test`, builds of the server package and the image
 - `e2e.yml`: `make test-e2e` (separate workflow)
 - `release.yml`: on `v*` tag push, builds the image per architecture natively
   (amd64 on `ubuntu-latest`, arm64 on `ubuntu-26.04-arm` runners — **no
