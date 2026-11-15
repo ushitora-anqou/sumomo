@@ -18,8 +18,7 @@
       # "go install" names the binary after the module path's last
       # component, which is already "sumomo".
       sumomoFor = p: p.buildGoModule {
-        pname = "sumomo";
-        version = "0.1.0";
+        name = "sumomo";
         src = ./server;
         vendorHash = "sha256-pfPkHcn+3bWfPcwo2KpZ06srAiG4SCaH3ME3d7xOP3Q=";
       };
