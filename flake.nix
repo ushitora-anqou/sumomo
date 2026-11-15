@@ -21,7 +21,7 @@
         pname = "sumomo";
         version = "0.1.0";
         src = ./server;
-        vendorHash = "sha256-G1Q/0zyOAjD29KK83ZT/qq2GHAG1lwnB9Vq+dUXJeVs=";
+        vendorHash = "sha256-pfPkHcn+3bWfPcwo2KpZ06srAiG4SCaH3ME3d7xOP3Q=";
       };
 
       # OCI image wrapping the server and llama.cpp. The GGUF model is NOT
