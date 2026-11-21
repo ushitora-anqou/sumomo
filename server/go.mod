@@ -3,8 +3,8 @@ module github.com/ushitora-anqou/sumomo
 go 1.26.0
 
 require (
-	github.com/openai/openai-go/v3 v3.99.0
-	golang.org/x/net v0.62.0
+	github.com/openai/openai-go/v3 v3.103.0
+	golang.org/x/net v0.63.0
 )
 
 require (
